@@ -1,0 +1,82 @@
+﻿{
+  "startNodeId": "main_scene_01",
+  "nodes": [
+    {
+      "id": "intro_Mozart",
+      "video": "intro_Mozart.mp4",
+      "choiceTime": -1,
+      "defaultNext": "main_scene_01",
+      "choices": []
+    },
+    {
+      "id": "intro_protector",
+      "video": "intro_protector.mp4",
+      "choiceTime": -1,
+      "defaultNext": "main_scene_01",
+      "choices": []
+    },
+    {
+      "id": "intro_survivor",
+      "video": "intro_survivor.mp4",
+      "choiceTime": -1,
+      "defaultNext": "main_scene_01",
+      "choices": []
+    },
+    {
+      "id": "main_scene_01",
+      "video": "main_scene_01.mp4",
+      "choiceTime": 2,
+      "defaultNext": "end_bad",
+      "choices": [
+        {
+          "text": "To dialogue test",
+          "next": "dialogue_scene"
+        },
+        {
+          "text": "dialogue",
+          "next": "investigate"
+        },
+        {
+          "text": "立刻逃离",
+          "next": "escape"
+        }
+      ]
+    },
+    {
+      "id": "investigate",
+      "video": "investigate.mp4",
+      "choiceTime": -1,
+      "defaultNext": "dialogue_scene",
+      "choices": []
+    },
+    {
+      "id": "escape",
+      "video": "escape.mp4",
+      "choiceTime": -1,
+      "defaultNext": "end_bad",
+      "choices": []
+    },
+    {
+      "id": "dialogue_scene",
+      "video": "",
+      "eventType": "voiceDialogue",
+      "choiceTime": -1,
+      "defaultNext": "end_good",
+      "choices": []
+    },
+    {
+      "id": "end_good",
+      "video": "end_good.mp4",
+      "choiceTime": -1,
+      "defaultNext": "",
+      "choices": []
+    },
+    {
+      "id": "end_bad",
+      "video": "end_bad.mp4",
+      "choiceTime": -1,
+      "defaultNext": "",
+      "choices": []
+    }
+  ]
+}

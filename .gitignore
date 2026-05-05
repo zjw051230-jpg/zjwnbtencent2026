@@ -1,0 +1,57 @@
+# Unity generated
+Library/
+Temp/
+Obj/
+Build/
+Builds/
+Logs/
+UserSettings/
+MemoryCaptures/
+Recordings/
+
+# Unity cache
+.vs/
+.gradle/
+ExportedObj/
+*.csproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Node
+server/node_modules/
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Env and secrets
+.env
+*.env
+server/.env
+server/*.env
+!server/.env.example
+
+# Build outputs
+Build_Windows/
+Build_WebGL/
+release/
+*.zip
+
+# Local editor
+.vscode/
+.idea/
