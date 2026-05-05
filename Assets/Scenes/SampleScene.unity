@@ -2024,6 +2024,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1489547528}
   - component: {fileID: 1489547527}
+  - component: {fileID: 1489547529}
   m_Layer: 0
   m_Name: OpeningQuestionController
   m_TagString: Untagged
@@ -2050,6 +2051,12 @@ MonoBehaviour:
   loadingText: {fileID: 1569720}
   optionRoot: {fileID: 923504294}
   optionButtonPrefab: {fileID: 7427279657017652504, guid: eb160256b5193b04bb857609a6cd8ce2, type: 3}
+  questionAudioSource: {fileID: 1489547529}
+  questionAudios:
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
   roleApiUrl: http://localhost:3000/api/assign-role
   fmvController: {fileID: 1321253497}
   enterGameDelay: 1.5
@@ -2069,6 +2076,33 @@ Transform:
   m_Father: {fileID: 0}
   m_RootOrder: 5
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!82 &1489547529
+AudioSource:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1489547526}
+  m_Enabled: 1
+  serializedVersion: 4
+  OutputAudioMixerGroup: {fileID: 0}
+  m_audioClip: {fileID: 0}
+  m_PlayOnAwake: 0
+  m_Volume: 1
+  m_Pitch: 1
+  Loop: 0
+  Mute: 0
+  Spatialize: 0
+  SpatializePostEffects: 0
+  Priority: 128
+  DopplerLevel: 1
+  MinDistance: 1
+  MaxDistance: 500
+  Pan2D: 0
+  rolloffMode: 0
+  BypassEffects: 0
+  BypassListenerEffects: 0
+  BypassReverbZones: 0
 --- !u!1 &1635759752
 GameObject:
   m_ObjectHideFlags: 0
