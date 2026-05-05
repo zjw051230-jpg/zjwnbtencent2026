@@ -257,11 +257,31 @@ public class PauseMenuController : MonoBehaviour
             string nodeId = node.id;
             button.onClick.AddListener(() =>
             {
-                CloseMenuForJump();
-                CancelMenuPauseForJump();
-                ClearUiBeforeJump();
-                fmvController.PlayNodeFromOutside(nodeId);
+                JumpToStoryNode(nodeId);
             });
+        }
+
+        AddDirectJumpButton("跳过问题，进入莫扎特故事线", "intro_Mozart");
+        AddDirectJumpButton("跳过问题，进入爱因斯坦故事线", "intro_Einstein");
+    }
+
+    private void AddDirectJumpButton(string label, string nodeId)
+    {
+        Button button = CreateMenuButton(new StoryNode { id = nodeId, menuTitle = label });
+        generatedButtons.Add(button);
+
+        button.onClick.AddListener(() =>
+        {
+            JumpToStoryNode(nodeId);
+        });
+    }
+
+    private void JumpToStoryNode(string nodeId)
+    {
+        CloseMenuForJump();
+        if (fmvController != null)
+        {
+            fmvController.PlayNodeFromOutside(nodeId);
         }
     }
 
@@ -359,6 +379,8 @@ public class PauseMenuController : MonoBehaviour
             pauseMenuPanel.SetActive(false);
         }
 
+        Time.timeScale = 1f;
+        AudioListener.pause = false;
         isOpen = false;
     }
 

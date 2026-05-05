@@ -19,10 +19,16 @@ public class VoiceDialogueController : MonoBehaviour
     public string roleName = "Mozart";
     public string sceneId = "dialogue_scene";
     public string speakingVideoFileName = "role_speaking.mp4";
+    public string successSpeakingVideoFileName = "role_speaking.mp4";
+    public string fallbackVideoFileName = "dialogue_fallback.mp4";
+    private string dialogueVideoFileName;
+    private string dialogueNextNodeId;
+    private FMVDemoController fmvController;
 
     [Header("Recording")]
     public int sampleRate = 16000;
     public int maxRecordSeconds = 15;
+    public int requestTimeoutSeconds = 30;
 
     [Header("UI")]
     public GameObject dialoguePanel;
@@ -35,15 +41,18 @@ public class VoiceDialogueController : MonoBehaviour
     public AudioSource aiAudioSource;
     public VideoPlayer speakingVideoPlayer;
     public GameObject speakingVideoDisplay;
+    public RawImage speakingVideoRawImage;
 
     private AudioClip recordingClip;
     private string microphoneDevice;
     private bool isRecording;
     private bool isSubmitting;
+    private RenderTexture runtimeSpeakingVideoTexture;
 
     private void Awake()
     {
         ResolveDialoguePanel();
+        ResolveTextBindings();
         ResolveAudioSource();
 
         if (recordButton != null)
@@ -62,7 +71,23 @@ public class VoiceDialogueController : MonoBehaviour
             dialoguePanel.SetActive(false);
         }
 
-        SetStatus("Ready to record");
+        SetStatus("点击按钮开始说话");
+    }
+
+    private void OnDestroy()
+    {
+        if (speakingVideoPlayer != null)
+        {
+            speakingVideoPlayer.errorReceived -= OnDialogueVideoError;
+            speakingVideoPlayer.prepareCompleted -= OnDialogueVideoPrepared;
+        }
+
+        if (runtimeSpeakingVideoTexture != null)
+        {
+            runtimeSpeakingVideoTexture.Release();
+            Destroy(runtimeSpeakingVideoTexture);
+            runtimeSpeakingVideoTexture = null;
+        }
     }
 
     private void ResolveDialoguePanel()
@@ -76,6 +101,37 @@ public class VoiceDialogueController : MonoBehaviour
         if (found != null)
         {
             dialoguePanel = found;
+        }
+    }
+
+    private void ResolveTextBindings()
+    {
+        if (transcriptText == null)
+        {
+            GameObject foundTranscript = GameObject.Find("TranscriptText");
+            if (foundTranscript != null)
+            {
+                transcriptText = foundTranscript.GetComponent<TMP_Text>();
+            }
+
+            if (transcriptText == null)
+            {
+                Debug.LogWarning("VoiceDialogueController: transcriptText is not assigned.");
+            }
+        }
+
+        if (replyText == null)
+        {
+            GameObject foundReply = GameObject.Find("ReplyText");
+            if (foundReply != null)
+            {
+                replyText = foundReply.GetComponent<TMP_Text>();
+            }
+
+            if (replyText == null)
+            {
+                Debug.LogWarning("VoiceDialogueController: replyText is not assigned.");
+            }
         }
     }
 
@@ -95,9 +151,23 @@ public class VoiceDialogueController : MonoBehaviour
 
     public void OpenDialogue(string roleIdValue, string roleNameValue, string sceneIdValue)
     {
+        OpenDialogue(roleIdValue, roleNameValue, sceneIdValue, "");
+    }
+
+    public void OpenDialogue(string roleIdValue, string roleNameValue, string sceneIdValue, string dialogueVideoFileNameValue)
+    {
+        OpenDialogue(roleIdValue, roleNameValue, sceneIdValue, dialogueVideoFileNameValue, "", null);
+    }
+
+    public void OpenDialogue(string roleIdValue, string roleNameValue, string sceneIdValue, string dialogueVideoFileNameValue, string nextNodeIdValue, FMVDemoController fmvControllerValue)
+    {
         roleId = string.IsNullOrEmpty(roleIdValue) ? roleId : roleIdValue;
         roleName = string.IsNullOrEmpty(roleNameValue) ? roleName : roleNameValue;
         sceneId = string.IsNullOrEmpty(sceneIdValue) ? sceneId : sceneIdValue;
+        dialogueVideoFileName = dialogueVideoFileNameValue;
+        dialogueNextNodeId = nextNodeIdValue;
+        fmvController = fmvControllerValue;
+        Debug.Log($"[VoiceDialogue] OpenDialogue video={dialogueVideoFileName}, next={dialogueNextNodeId}");
 
         if (dialoguePanel != null)
         {
@@ -120,7 +190,167 @@ public class VoiceDialogueController : MonoBehaviour
             replyText.text = "";
         }
 
-        SetStatus("Ready to record");
+        SetStatus("点击按钮开始说话");
+        PlayDialogueVideo(dialogueVideoFileName);
+    }
+
+    private void PlayDialogueVideo(string videoFileName)
+    {
+        if (string.IsNullOrEmpty(videoFileName))
+        {
+            Debug.LogWarning("[VoiceDialogue] dialogue video file name is empty.");
+            return;
+        }
+
+        Debug.Log("[VoiceDialogue] PlayDialogueVideo videoFileName=" + videoFileName);
+
+        string normalizedFileName = videoFileName.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)
+            ? videoFileName
+            : videoFileName + ".mp4";
+
+        string localPath = Path.Combine(Application.streamingAssetsPath, "Videos", normalizedFileName);
+        Debug.Log("[VoiceDialogue] dialogue localPath=" + localPath);
+
+#if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
+        bool fileExists = File.Exists(localPath);
+        Debug.Log("[VoiceDialogue] dialogue file exists=" + fileExists);
+        if (!fileExists)
+        {
+            Debug.LogWarning("VoiceDialogueController: dialogue video missing. path=" + localPath);
+            return;
+        }
+#endif
+
+        if (speakingVideoDisplay != null)
+        {
+            speakingVideoDisplay.SetActive(true);
+            Debug.Log($"[VoiceDialogue] speakingVideoDisplay activeSelf={speakingVideoDisplay.activeSelf}, activeInHierarchy={speakingVideoDisplay.activeInHierarchy}");
+        }
+        else
+        {
+            Debug.LogWarning("[VoiceDialogue] speakingVideoDisplay is not assigned.");
+        }
+
+        if (speakingVideoPlayer == null)
+        {
+            Debug.LogWarning("[VoiceDialogue] speakingVideoPlayer is not assigned.");
+            return;
+        }
+
+        EnsureSpeakingVideoOutput();
+
+        string videoUrl = BuildVideoUrl(normalizedFileName);
+        speakingVideoPlayer.Stop();
+        speakingVideoPlayer.source = VideoSource.Url;
+        speakingVideoPlayer.url = videoUrl;
+        speakingVideoPlayer.isLooping = true;
+        speakingVideoPlayer.playOnAwake = false;
+        speakingVideoPlayer.waitForFirstFrame = true;
+        speakingVideoPlayer.errorReceived -= OnDialogueVideoError;
+        speakingVideoPlayer.errorReceived += OnDialogueVideoError;
+        speakingVideoPlayer.prepareCompleted -= OnDialogueVideoPrepared;
+        speakingVideoPlayer.prepareCompleted += OnDialogueVideoPrepared;
+
+        Debug.Log("[VoiceDialogue] dialogue video url=" + videoUrl);
+        speakingVideoPlayer.Prepare();
+    }
+
+    private void EnsureSpeakingVideoOutput()
+    {
+        if (speakingVideoRawImage == null && speakingVideoDisplay != null)
+        {
+            speakingVideoRawImage = speakingVideoDisplay.GetComponentInChildren<RawImage>(true);
+        }
+
+        if (speakingVideoRawImage == null)
+        {
+            Debug.LogWarning("[VoiceDialogue] speakingVideoRawImage is not assigned.");
+        }
+        else
+        {
+            speakingVideoRawImage.gameObject.SetActive(true);
+            FitVideoToContainer();
+        }
+
+        if (speakingVideoPlayer == null)
+        {
+            return;
+        }
+
+        speakingVideoPlayer.renderMode = VideoRenderMode.RenderTexture;
+
+        RenderTexture targetTexture = speakingVideoPlayer.targetTexture;
+        if (targetTexture == null && speakingVideoRawImage != null)
+        {
+            targetTexture = speakingVideoRawImage.texture as RenderTexture;
+        }
+
+        if (targetTexture == null)
+        {
+            if (runtimeSpeakingVideoTexture == null)
+            {
+                runtimeSpeakingVideoTexture = new RenderTexture(1280, 720, 0);
+                runtimeSpeakingVideoTexture.name = "RuntimeDialogueVideoRT";
+            }
+
+            targetTexture = runtimeSpeakingVideoTexture;
+        }
+
+        speakingVideoPlayer.targetTexture = targetTexture;
+
+        if (speakingVideoRawImage != null)
+        {
+            speakingVideoRawImage.texture = targetTexture;
+        }
+
+        Debug.Log("[VoiceDialogue] video renderMode=" + speakingVideoPlayer.renderMode + ", targetTexture=" + (targetTexture == null ? "null" : targetTexture.name));
+    }
+
+    private void FitVideoToContainer()
+    {
+        if (speakingVideoRawImage == null)
+        {
+            return;
+        }
+
+        RectTransform containerRect = speakingVideoDisplay == null ? null : speakingVideoDisplay.GetComponent<RectTransform>();
+        if (containerRect != null && containerRect.rect.width < 300f && containerRect.rect.height < 200f)
+        {
+            containerRect.anchorMin = new Vector2(0.5f, 0.5f);
+            containerRect.anchorMax = new Vector2(0.5f, 0.5f);
+            containerRect.pivot = new Vector2(0.5f, 0.5f);
+            containerRect.sizeDelta = new Vector2(960f, 540f);
+            containerRect.localScale = Vector3.one;
+        }
+
+        RectTransform rect = speakingVideoRawImage.rectTransform;
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+        rect.localScale = Vector3.one;
+
+        AspectRatioFitter fitter = speakingVideoRawImage.GetComponent<AspectRatioFitter>();
+        if (fitter == null)
+        {
+            fitter = speakingVideoRawImage.gameObject.AddComponent<AspectRatioFitter>();
+        }
+
+        fitter.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
+        fitter.aspectRatio = 16f / 9f;
+
+        Debug.Log("[VoiceDialogue] video rect fitted. containerSize=" + (containerRect == null ? "null" : containerRect.rect.size.ToString()) + ", rawImageSize=" + rect.rect.size);
+    }
+
+    private void OnDialogueVideoPrepared(VideoPlayer player)
+    {
+        Debug.Log("[VoiceDialogue] dialogue video prepared, play now.");
+        player.Play();
+    }
+
+    private void OnDialogueVideoError(VideoPlayer player, string message)
+    {
+        Debug.LogError("[VoiceDialogue] dialogue video error: " + message);
     }
 
     private void ActivateParents(Transform target)
@@ -210,7 +440,7 @@ public class VoiceDialogueController : MonoBehaviour
         microphoneDevice = Microphone.devices[0];
         recordingClip = Microphone.Start(microphoneDevice, false, maxRecordSeconds, sampleRate);
         isRecording = true;
-        SetStatus("Recording, click again to send");
+        SetStatus("正在录音，再次点击结束");
         Debug.Log("VoiceDialogueController: recording started with " + microphoneDevice);
 #endif
     }
@@ -229,11 +459,12 @@ public class VoiceDialogueController : MonoBehaviour
         Debug.Log("VoiceDialogueController: microphone sample position = " + samplePosition);
         Microphone.End(microphoneDevice);
         isRecording = false;
-
         if (samplePosition <= 0)
         {
+            SetRecordButtonVisible(false);
             SetStatus("Recording is empty, try again");
             Debug.LogWarning("VoiceDialogueController: empty recording.");
+            StartCoroutine(PlayFallbackDialogueVideoAndRestoreRecordButton());
             return;
         }
 
@@ -247,57 +478,96 @@ public class VoiceDialogueController : MonoBehaviour
     private IEnumerator SendVoiceDialogue(byte[] wavBytes)
     {
         isSubmitting = true;
-        SetStatus("Sending voice...");
+        SetRecordButtonVisible(false);
 
-        List<IMultipartFormSection> form = new List<IMultipartFormSection>
+        try
         {
-            new MultipartFormFileSection("audio", wavBytes, "player_question.wav", "audio/wav"),
-            new MultipartFormDataSection("roleId", roleId),
-            new MultipartFormDataSection("roleName", roleName),
-            new MultipartFormDataSection("sceneId", sceneId)
-        };
+            SetStatus("正在上传语音...");
 
-        string voiceDialogueUrl = BuildApiUrl("/api/voice-dialogue", voiceDialogueApiUrl);
-        Debug.Log("VoiceDialogueController: voice-dialogue url=" + voiceDialogueUrl);
-
-        using (UnityWebRequest request = UnityWebRequest.Post(voiceDialogueUrl, form))
-        {
-            yield return request.SendWebRequest();
-
-            if (request.result != UnityWebRequest.Result.Success)
+            List<IMultipartFormSection> form = new List<IMultipartFormSection>
             {
-                SetStatus("语音发送失败，请重试");
-                Debug.LogError("VoiceDialogueController: request failed: " + request.error);
-                isSubmitting = false;
-                yield break;
+                new MultipartFormFileSection("audio", wavBytes, "player_question.wav", "audio/wav"),
+                new MultipartFormDataSection("roleId", roleId),
+                new MultipartFormDataSection("roleName", roleName),
+                new MultipartFormDataSection("sceneId", sceneId)
+            };
+
+            string voiceDialogueUrl = BuildApiUrl("/api/voice-dialogue", voiceDialogueApiUrl);
+            Debug.Log("VoiceDialogueController: voice-dialogue url=" + voiceDialogueUrl);
+
+            using (UnityWebRequest request = UnityWebRequest.Post(voiceDialogueUrl, form))
+            {
+                request.timeout = Mathf.Max(1, requestTimeoutSeconds);
+                SetStatus("正在等待语音识别...");
+                yield return request.SendWebRequest();
+
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    SetStatus("语音发送失败，请重试");
+                    Debug.LogError("VoiceDialogueController: request failed: " + request.error);
+                    yield return PlayFallbackDialogueVideo();
+                    yield break;
+                }
+
+                string responseJson = request.downloadHandler.text;
+                Debug.Log("VoiceDialogueController: response " + responseJson);
+
+                VoiceDialogueResponse response = null;
+                try
+                {
+                    response = JsonUtility.FromJson<VoiceDialogueResponse>(responseJson);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning("VoiceDialogueController: response parse failed: " + ex.Message);
+                }
+
+                yield return HandleDialogueResponse(response);
             }
-
-            string responseJson = request.downloadHandler.text;
-            Debug.Log("VoiceDialogueController: response " + responseJson);
-
-            VoiceDialogueResponse response = JsonUtility.FromJson<VoiceDialogueResponse>(responseJson);
-            ApplyDialogueResponse(response);
+        }
+        finally
+        {
+            SetRecordButtonVisible(true);
         }
     }
 
     private void ApplyDialogueResponse(VoiceDialogueResponse response)
     {
+        StartCoroutine(HandleDialogueResponse(response));
+    }
+
+    private IEnumerator HandleDialogueResponse(VoiceDialogueResponse response)
+    {
         if (response == null)
         {
             SetStatus("Response parse failed");
-            isSubmitting = false;
-            return;
+            if (transcriptText != null)
+            {
+                transcriptText.text = "未识别到语音文本";
+            }
+
+            if (replyText != null)
+            {
+                replyText.text = "未收到角色回复";
+            }
+
+            yield return PlayFallbackDialogueVideo();
+            yield break;
         }
 
         if (!response.ok)
         {
             Debug.LogWarning("VoiceDialogueController: backend fallback. error=" + response.error);
         }
+        else if (!string.IsNullOrEmpty(response.error))
+        {
+            Debug.LogWarning("VoiceDialogueController: backend returned warning: " + response.error);
+        }
 
         if (transcriptText != null)
         {
-            transcriptText.text = string.IsNullOrEmpty(response.transcript) ? "" : response.transcript;
-            Debug.Log("VoiceDialogueController: transcript displayed: " + response.transcript);
+            transcriptText.text = string.IsNullOrWhiteSpace(response.transcript) ? "未识别到语音文本" : response.transcript;
+            Debug.Log("VoiceDialogueController: transcript length = " + (response.transcript == null ? 0 : response.transcript.Length));
         }
         else
         {
@@ -306,26 +576,45 @@ public class VoiceDialogueController : MonoBehaviour
 
         if (replyText != null)
         {
-            replyText.text = string.IsNullOrEmpty(response.replyText) ? "(No reply text)" : response.replyText;
-            Debug.Log("VoiceDialogueController: reply displayed: " + response.replyText);
+            replyText.text = string.IsNullOrWhiteSpace(response.replyText) ? "未收到角色回复" : response.replyText;
+            Debug.Log("VoiceDialogueController: replyText length = " + (response.replyText == null ? 0 : response.replyText.Length));
         }
         else
         {
             Debug.LogWarning("VoiceDialogueController: Reply Text is not assigned.");
         }
 
-        SetStatus("Character replied");
-        StartCoroutine(PlayReply(response));
+        if (HasValidAiVoiceResponse(response))
+        {
+            SetStatus(GetResponseStatus(response));
+            yield return PlayAiVoiceWithSpeakingVideo(response);
+        }
+        else
+        {
+            SetStatus("未检测到有效语音，播放预设回应");
+            yield return PlayFallbackDialogueVideo();
+        }
     }
 
-    private IEnumerator PlayReply(VoiceDialogueResponse response)
+    private bool HasValidAiVoiceResponse(VoiceDialogueResponse response)
     {
-        PlaySpeakingVideo(response.speakingVideoNodeId);
+        return response != null
+            && response.ok
+            && !string.IsNullOrWhiteSpace(response.transcript)
+            && !string.IsNullOrWhiteSpace(response.replyText)
+            && !string.IsNullOrWhiteSpace(response.audioUrl);
+    }
+
+    private IEnumerator PlayAiVoiceWithSpeakingVideo(VoiceDialogueResponse response)
+    {
+        PlaySpeakingVideo(successSpeakingVideoFileName);
 
         if (!string.IsNullOrEmpty(response.audioUrl))
         {
-            using (UnityWebRequest request = UnityWebRequestMultimedia.GetAudioClip(response.audioUrl, AudioType.MPEG))
+            AudioType audioType = ResolveAudioType(response.audioUrl);
+            using (UnityWebRequest request = UnityWebRequestMultimedia.GetAudioClip(response.audioUrl, audioType))
             {
+                request.timeout = Mathf.Max(1, requestTimeoutSeconds);
                 yield return request.SendWebRequest();
 
                 if (request.result == UnityWebRequest.Result.Success)
@@ -337,26 +626,134 @@ public class VoiceDialogueController : MonoBehaviour
                         aiAudioSource.clip = clip;
                         aiAudioSource.Play();
                     }
+                    else
+                    {
+                        Debug.LogWarning("VoiceDialogueController: aiAudioSource or downloaded clip is not available.");
+                    }
                 }
                 else
                 {
-                    Debug.LogError("VoiceDialogueController: audio download failed: " + request.error);
+                    SetStatus("语音音频播放失败，但文本回复已收到");
+                    Debug.LogWarning("VoiceDialogueController: audio download failed: " + request.error);
                 }
             }
         }
+        else
+        {
+            Debug.Log("VoiceDialogueController: audioUrl is empty, skip reply audio playback.");
+        }
 
         isSubmitting = false;
-        SetStatus("Ready to record");
+        if (string.IsNullOrEmpty(response.audioUrl))
+        {
+            SetStatus(GetResponseStatus(response));
+        }
+
+        if (!string.IsNullOrEmpty(dialogueNextNodeId) && fmvController != null)
+        {
+            fmvController.PlayNodeFromOutside(dialogueNextNodeId);
+        }
+    }
+
+    private IEnumerator PlayFallbackDialogueVideo()
+    {
+        SetStatus("未检测到有效语音，播放预设回应");
+
+        if (string.IsNullOrWhiteSpace(fallbackVideoFileName))
+        {
+            Debug.LogWarning("VoiceDialogueController: fallbackVideoFileName is empty.");
+            isSubmitting = false;
+            yield break;
+        }
+
+#if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
+        string normalizedFallbackFileName = fallbackVideoFileName.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)
+            ? fallbackVideoFileName
+            : fallbackVideoFileName + ".mp4";
+        string fallbackPath = Path.Combine(Application.streamingAssetsPath, "Videos", normalizedFallbackFileName);
+        if (!File.Exists(fallbackPath))
+        {
+            SetStatus("兜底视频缺失，请检查资源");
+            Debug.LogWarning("VoiceDialogueController: fallback video missing. path=" + fallbackPath);
+            isSubmitting = false;
+            yield break;
+        }
+#endif
+
+        PlayDialogueVideo(fallbackVideoFileName);
+        isSubmitting = false;
+        yield break;
+    }
+
+    private IEnumerator PlayFallbackDialogueVideoAndRestoreRecordButton()
+    {
+        yield return PlayFallbackDialogueVideo();
+        SetRecordButtonVisible(true);
+    }
+
+    private void SetRecordButtonVisible(bool visible)
+    {
+        if (recordButton == null)
+        {
+            return;
+        }
+
+        recordButton.gameObject.SetActive(visible);
+        recordButton.interactable = visible;
+    }
+
+    private string GetResponseStatus(VoiceDialogueResponse response)
+    {
+        if (response == null)
+        {
+            return "语音发送失败，请重试";
+        }
+
+        if (string.Equals(response.source, "doubao", StringComparison.OrdinalIgnoreCase))
+        {
+            return "真实语音回复";
+        }
+
+        if (string.Equals(response.source, "mock", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.IsNullOrEmpty(response.error) ? "Demo 模式回复" : "真实语音失败，已使用 Demo 回复";
+        }
+
+        return "已收到回复";
+    }
+
+    private AudioType ResolveAudioType(string audioUrl)
+    {
+        if (string.IsNullOrEmpty(audioUrl))
+        {
+            return AudioType.UNKNOWN;
+        }
+
+        string urlWithoutQuery = audioUrl.Split('?')[0].ToLowerInvariant();
+        if (urlWithoutQuery.EndsWith(".wav"))
+        {
+            return AudioType.WAV;
+        }
+
+        if (urlWithoutQuery.EndsWith(".mp3"))
+        {
+            return AudioType.MPEG;
+        }
+
+        return AudioType.MPEG;
     }
 
     private void PlaySpeakingVideo(string speakingVideoNodeId)
     {
         if (speakingVideoPlayer == null)
         {
+            Debug.LogWarning("VoiceDialogueController: speakingVideoPlayer is not assigned.");
             return;
         }
 
-        string fileName = string.IsNullOrEmpty(speakingVideoNodeId) ? speakingVideoFileName : speakingVideoNodeId + ".mp4";
+        string fileName = string.IsNullOrEmpty(speakingVideoNodeId)
+            ? speakingVideoFileName
+            : speakingVideoNodeId.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ? speakingVideoNodeId : speakingVideoNodeId + ".mp4";
 
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
         string localPath = Path.Combine(Application.streamingAssetsPath, "Videos", fileName);
@@ -372,13 +769,16 @@ public class VoiceDialogueController : MonoBehaviour
             speakingVideoDisplay.SetActive(true);
         }
 
+        EnsureSpeakingVideoOutput();
+
+        string videoUrl = BuildVideoUrl(fileName);
         speakingVideoPlayer.Stop();
         speakingVideoPlayer.source = VideoSource.Url;
-        speakingVideoPlayer.url = BuildVideoUrl(fileName);
+        speakingVideoPlayer.url = videoUrl;
         speakingVideoPlayer.isLooping = true;
         speakingVideoPlayer.Play();
 
-        Debug.Log("VoiceDialogueController: play speaking video " + speakingVideoPlayer.url);
+        Debug.Log("[VoiceDialogue] video url=" + videoUrl);
     }
 
     public void StopSpeakingVideo()
@@ -453,6 +853,7 @@ public class VoiceDialogueResponse
     public string audioUrl;
     public string speakingVideoNodeId;
     public string emotion;
+    public string source;
     public string error;
 }
 
