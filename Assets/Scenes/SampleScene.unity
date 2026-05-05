@@ -2069,12 +2069,14 @@ MonoBehaviour:
   loadingText: {fileID: 1569720}
   optionRoot: {fileID: 923504294}
   optionButtonPrefab: {fileID: 7427279657017652504, guid: eb160256b5193b04bb857609a6cd8ce2, type: 3}
+  blackScreenPanel: {fileID: 0}
   questionAudioSource: {fileID: 1489547529}
+  openingAudioClip: {fileID: 0}
   questionAudios:
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
+  - {fileID: 8300000, guid: c2643793f98582940bb5be26404ef0fe, type: 3}
+  - {fileID: 8300000, guid: 66f6f59c690f2be48a6fe1de6e71cb2c, type: 3}
+  - {fileID: 8300000, guid: e55efd658236ed34d8c74b4a2879c1c7, type: 3}
+  - {fileID: 8300000, guid: 71051f5c46ac30d45b5373cd8d13b414, type: 3}
   roleApiUrl: http://localhost:3000/api/assign-role
   fmvController: {fileID: 1321253497}
   enterGameDelay: 1.5
