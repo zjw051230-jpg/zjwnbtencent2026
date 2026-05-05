@@ -1,61 +1,40 @@
-﻿{
-  "startNodeId": "main_scene_01",
+{
+  "startNodeId": "intro_Mozart",
   "nodes": [
     {
       "id": "intro_Mozart",
       "video": "intro_Mozart.mp4",
       "choiceTime": -1,
-      "defaultNext": "main_scene_01",
+      "defaultNext": "mozart_before_main",
+      "showInMenu": false,
+      "menuTitle": "\u83ab\u624e\u7279\u89d2\u8272\u5165\u53e3",
       "choices": []
     },
     {
-      "id": "intro_protector",
-      "video": "intro_protector.mp4",
+      "id": "mozart_before_main",
+      "video": "mozart_before_main.mp4",
       "choiceTime": -1,
-      "defaultNext": "main_scene_01",
+      "defaultNext": "",
+      "showInMenu": false,
+      "menuTitle": "\u83ab\u624e\u7279\u4e3b\u7ebf\u524d\u8282\u70b9",
       "choices": []
     },
     {
-      "id": "intro_survivor",
-      "video": "intro_survivor.mp4",
+      "id": "intro_Einstein",
+      "video": "intro_Einstein.mp4",
       "choiceTime": -1,
-      "defaultNext": "main_scene_01",
+      "defaultNext": "einstein_before_main",
+      "showInMenu": false,
+      "menuTitle": "\u7231\u56e0\u65af\u5766\u89d2\u8272\u5165\u53e3",
       "choices": []
     },
     {
-      "id": "main_scene_01",
-      "video": "main_scene_01.mp4",
-      "choiceTime": 2,
-      "defaultNext": "end_bad",
-      "showInMenu": true,
-      "menuTitle": "主剧情测试",
-      "choices": [
-        {
-          "text": "To dialogue test",
-          "next": "dialogue_scene"
-        },
-        {
-          "text": "dialogue",
-          "next": "investigate"
-        },
-        {
-          "text": "立刻逃离",
-          "next": "escape"
-        }
-      ]
-    },
-    {
-      "id": "investigate",
-      "video": "investigate.mp4",
+      "id": "einstein_before_main",
+      "video": "einstein_before_main.mp4",
       "choiceTime": -1,
-      "defaultNext": "dialogue_scene",
-      "choices": []
-    },
-    {
-      "id": "escape",
-      "video": "escape.mp4",
-      "choiceTime": -1,
-      "defaultNext": "end_bad",
+      "defaultNext": "",
+      "showInMenu": false,
+      "menuTitle": "\u7231\u56e0\u65af\u5766\u4e3b\u7ebf\u524d\u8282\u70b9",
       "choices": []
     },
     {
@@ -63,23 +42,9 @@
       "video": "",
       "eventType": "voiceDialogue",
       "choiceTime": -1,
-      "defaultNext": "end_good",
+      "defaultNext": "",
       "showInMenu": true,
-      "menuTitle": "语音对话测试",
-      "choices": []
-    },
-    {
-      "id": "end_good",
-      "video": "end_good.mp4",
-      "choiceTime": -1,
-      "defaultNext": "",
-      "choices": []
-    },
-    {
-      "id": "end_bad",
-      "video": "end_bad.mp4",
-      "choiceTime": -1,
-      "defaultNext": "",
+      "menuTitle": "\u8fdb\u5165\u8bed\u97f3\u5bf9\u8bdd",
       "choices": []
     }
   ]

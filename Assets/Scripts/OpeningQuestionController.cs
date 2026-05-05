@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using TMPro;
 using UnityEngine;
@@ -11,6 +12,13 @@ using UnityEngine.Video;
 
 public class OpeningQuestionController : MonoBehaviour
 {
+    [Serializable]
+    public class RoleAudioData
+    {
+        public string roleId;
+        public AudioClip audioClip;
+    }
+
     [Header("UI")]
     public GameObject questionPanel;
     public TMP_Text titleText;
@@ -26,6 +34,14 @@ public class OpeningQuestionController : MonoBehaviour
     public AudioClip openingAudioClip;
     public AudioClip[] questionAudios;
 
+    [Header("Opening Video")]
+    public string openingVideoFileName = "opening_video.mp4";
+    public VideoPlayer openingVideoPlayer;
+
+    [Header("Role Audio")]
+    public AudioSource roleAudioSource;
+    public RoleAudioData[] roleAudios;
+
     [Header("API")]
     public string apiBaseUrl = "http://localhost:3000";
     public string roleApiUrl = "http://localhost:3000/api/assign-role";
@@ -34,6 +50,7 @@ public class OpeningQuestionController : MonoBehaviour
     public FMVDemoController fmvController;
     public float enterGameDelay = 1.5f;
     public GameObject videoDisplay;
+    public bool waitForAccessKeySetup = true;
 
     private readonly List<QuestionData> questions = new List<QuestionData>();
     private readonly List<PlayerAnswer> answers = new List<PlayerAnswer>();
@@ -41,18 +58,52 @@ public class OpeningQuestionController : MonoBehaviour
     private int currentQuestionIndex;
     private bool isSubmitting;
     private bool isChangingQuestion;
+    private bool openingFlowStarted;
+    private bool isOpeningFlowPaused;
+    private bool openingVideoFinished;
+    private bool wasOpeningVideoPausedForMenu;
+    private bool wasQuestionAudioPausedForMenu;
+    private bool wasRoleAudioPausedForMenu;
+
+    public bool IsOpeningFlowPaused => isOpeningFlowPaused;
 
     private void Awake()
     {
         EnsureEventSystem();
         EnsureCanvasRaycaster();
         ResolveVideoDisplay();
+        ResolveOpeningVideoPlayer();
         ResolveQuestionAudioSource();
+        ResolveRoleAudioSource();
         ResolveBlackScreenPanel();
         HideVideoDisplay();
     }
 
     private void Start()
+    {
+        if (waitForAccessKeySetup)
+        {
+            PrepareOpeningFlowState();
+            EnsureAccessKeySetupController();
+            return;
+        }
+
+        BeginOpeningFlowFromAccessKeySetup();
+    }
+
+    public void BeginOpeningFlowFromAccessKeySetup()
+    {
+        if (openingFlowStarted)
+        {
+            return;
+        }
+
+        openingFlowStarted = true;
+        PrepareOpeningFlowState();
+        StartCoroutine(PlayOpeningVideoThenStartQuestions());
+    }
+
+    private void PrepareOpeningFlowState()
     {
         InitQuestions();
         answers.Clear();
@@ -71,8 +122,25 @@ public class OpeningQuestionController : MonoBehaviour
         }
 
         HideVideoDisplay();
+    }
 
-        StartCoroutine(PlayOpeningThenStartQuestions());
+    private void EnsureAccessKeySetupController()
+    {
+        AccessKeySetupController setupController = FindObjectOfType<AccessKeySetupController>();
+        if (setupController == null)
+        {
+            setupController = gameObject.AddComponent<AccessKeySetupController>();
+        }
+
+        if (setupController.openingQuestionController == null)
+        {
+            setupController.openingQuestionController = this;
+        }
+
+        if (string.IsNullOrWhiteSpace(setupController.apiBaseUrl))
+        {
+            setupController.apiBaseUrl = apiBaseUrl;
+        }
     }
 
     private void ResolveVideoDisplay()
@@ -89,6 +157,28 @@ public class OpeningQuestionController : MonoBehaviour
         }
     }
 
+    private void ResolveOpeningVideoPlayer()
+    {
+        if (openingVideoPlayer != null)
+        {
+            return;
+        }
+
+        if (videoDisplay != null)
+        {
+            openingVideoPlayer = videoDisplay.GetComponent<VideoPlayer>();
+            if (openingVideoPlayer == null)
+            {
+                openingVideoPlayer = videoDisplay.GetComponentInChildren<VideoPlayer>(true);
+            }
+        }
+
+        if (openingVideoPlayer == null && fmvController != null)
+        {
+            openingVideoPlayer = fmvController.videoPlayer;
+        }
+    }
+
     private void ResolveQuestionAudioSource()
     {
         if (questionAudioSource != null)
@@ -101,6 +191,16 @@ public class OpeningQuestionController : MonoBehaviour
         {
             questionAudioSource = gameObject.AddComponent<AudioSource>();
         }
+    }
+
+    private void ResolveRoleAudioSource()
+    {
+        if (roleAudioSource != null)
+        {
+            return;
+        }
+
+        roleAudioSource = gameObject.AddComponent<AudioSource>();
     }
 
     private void ResolveBlackScreenPanel()
@@ -149,7 +249,62 @@ public class OpeningQuestionController : MonoBehaviour
         blackScreenPanel.SetActive(false);
     }
 
-    private IEnumerator PlayOpeningThenStartQuestions()
+    public void PauseOpeningFlowForMenu()
+    {
+        isOpeningFlowPaused = true;
+
+        wasOpeningVideoPausedForMenu = openingVideoPlayer != null && openingVideoPlayer.isPlaying;
+        if (wasOpeningVideoPausedForMenu)
+        {
+            openingVideoPlayer.Pause();
+        }
+
+        wasQuestionAudioPausedForMenu = questionAudioSource != null && questionAudioSource.isPlaying;
+        if (wasQuestionAudioPausedForMenu)
+        {
+            questionAudioSource.Pause();
+        }
+
+        wasRoleAudioPausedForMenu = roleAudioSource != null && roleAudioSource.isPlaying;
+        if (wasRoleAudioPausedForMenu)
+        {
+            roleAudioSource.Pause();
+        }
+    }
+
+    public void ResumeOpeningFlowFromMenu()
+    {
+        isOpeningFlowPaused = false;
+
+        if (wasOpeningVideoPausedForMenu && openingVideoPlayer != null)
+        {
+            openingVideoPlayer.Play();
+        }
+
+        if (wasQuestionAudioPausedForMenu && questionAudioSource != null)
+        {
+            questionAudioSource.UnPause();
+        }
+
+        if (wasRoleAudioPausedForMenu && roleAudioSource != null)
+        {
+            roleAudioSource.UnPause();
+        }
+
+        wasOpeningVideoPausedForMenu = false;
+        wasQuestionAudioPausedForMenu = false;
+        wasRoleAudioPausedForMenu = false;
+    }
+
+    public void CancelMenuPauseForExternalJump()
+    {
+        isOpeningFlowPaused = false;
+        wasOpeningVideoPausedForMenu = false;
+        wasQuestionAudioPausedForMenu = false;
+        wasRoleAudioPausedForMenu = false;
+    }
+
+    private IEnumerator PlayOpeningVideoThenStartQuestions()
     {
         HideVideoDisplay();
         ClearOptions();
@@ -181,32 +336,61 @@ public class OpeningQuestionController : MonoBehaviour
 
         if (blackScreenPanel != null)
         {
-            blackScreenPanel.SetActive(true);
-        }
-        else
-        {
-            Debug.LogWarning("OpeningQuestionController: BlackScreenPanel is not assigned, opening audio will still play.");
-        }
-
-        if (openingAudioClip == null)
-        {
-            Debug.LogWarning("OpeningQuestionController: opening audio clip is empty, skip opening audio.");
-        }
-        else if (questionAudioSource == null)
-        {
-            Debug.LogWarning("OpeningQuestionController: Question Audio Source is not assigned, skip opening audio.");
-        }
-        else
-        {
-            questionAudioSource.Stop();
-            questionAudioSource.clip = openingAudioClip;
-            questionAudioSource.Play();
-            yield return new WaitWhile(() => questionAudioSource != null && questionAudioSource.isPlaying);
-        }
-
-        if (blackScreenPanel != null)
-        {
             blackScreenPanel.SetActive(false);
+        }
+
+        if (string.IsNullOrEmpty(openingVideoFileName))
+        {
+            Debug.LogWarning("OpeningQuestionController: opening video file name is empty, skip opening video.");
+        }
+        else if (openingVideoPlayer == null)
+        {
+            Debug.LogWarning("OpeningQuestionController: Opening Video Player is not assigned, skip opening video.");
+        }
+        else if (!OpeningVideoExists(openingVideoFileName))
+        {
+            Debug.LogWarning("OpeningQuestionController: opening video not found: " + openingVideoFileName + ", skip opening video.");
+        }
+        else
+        {
+            ShowVideoDisplay();
+
+            openingVideoFinished = false;
+            VideoPlayer.EventHandler onFinished = player => openingVideoFinished = true;
+            openingVideoPlayer.loopPointReached += onFinished;
+
+            openingVideoPlayer.Stop();
+            openingVideoPlayer.playOnAwake = false;
+            openingVideoPlayer.isLooping = false;
+            openingVideoPlayer.source = VideoSource.Url;
+            openingVideoPlayer.url = BuildOpeningVideoUrl(openingVideoFileName);
+            openingVideoPlayer.Prepare();
+
+            float prepareDeadline = Time.realtimeSinceStartup + 8f;
+            yield return new WaitUntil(() => openingVideoPlayer == null || openingVideoPlayer.isPrepared || Time.realtimeSinceStartup >= prepareDeadline);
+
+            if (openingVideoPlayer != null && openingVideoPlayer.isPrepared)
+            {
+                openingVideoPlayer.Play();
+                Debug.Log("OpeningQuestionController: playing opening video " + openingVideoPlayer.url);
+
+                while (openingVideoPlayer != null && !openingVideoFinished)
+                {
+                    yield return null;
+                }
+            }
+            else
+            {
+                Debug.LogWarning("OpeningQuestionController: opening video prepare timeout, skip opening video.");
+            }
+
+            if (openingVideoPlayer != null)
+            {
+                openingVideoPlayer.loopPointReached -= onFinished;
+                openingVideoPlayer.Stop();
+            }
+
+            HideVideoDisplay();
         }
 
         if (questionPanel != null)
@@ -220,6 +404,62 @@ public class OpeningQuestionController : MonoBehaviour
         }
 
         ShowQuestion(0);
+    }
+
+    private bool OpeningVideoExists(string fileName)
+    {
+#if UNITY_WEBGL && !UNITY_EDITOR
+        return true;
+#else
+        string localPath = Path.Combine(Application.streamingAssetsPath, "Videos", fileName);
+        return File.Exists(localPath);
+#endif
+    }
+
+    private string BuildOpeningVideoUrl(string videoFileName)
+    {
+        if (videoFileName.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            videoFileName.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            return videoFileName;
+        }
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+        return Application.streamingAssetsPath + "/Videos/" + videoFileName;
+#elif UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
+        string windowsPath = Path.Combine(Application.streamingAssetsPath, "Videos", videoFileName);
+        return "file:///" + windowsPath.Replace("\\", "/");
+#else
+        return Path.Combine(Application.streamingAssetsPath, "Videos", videoFileName);
+#endif
+    }
+
+    private void ShowVideoDisplay()
+    {
+        if (videoDisplay == null)
+        {
+            return;
+        }
+
+        RawImage rawImage = videoDisplay.GetComponent<RawImage>();
+        if (rawImage == null)
+        {
+            rawImage = videoDisplay.GetComponentInChildren<RawImage>(true);
+        }
+
+        if (rawImage != null)
+        {
+            if (rawImage.texture == null && openingVideoPlayer != null && openingVideoPlayer.targetTexture != null)
+            {
+                rawImage.texture = openingVideoPlayer.targetTexture;
+            }
+
+            Color color = rawImage.color;
+            color.a = 1f;
+            rawImage.color = color;
+        }
+
+        videoDisplay.SetActive(true);
     }
 
     private void HideVideoDisplay()
@@ -425,7 +665,12 @@ public class OpeningQuestionController : MonoBehaviour
         questionAudioSource.clip = clip;
         questionAudioSource.Play();
 
-        yield return new WaitWhile(() => questionAudioSource != null && questionAudioSource.isPlaying);
+        while (questionAudioSource != null &&
+               questionAudioSource.clip == clip &&
+               questionAudioSource.time < clip.length - 0.05f)
+        {
+            yield return null;
+        }
 
         ShowOptionsForQuestion(index);
     }
@@ -647,15 +892,60 @@ public class OpeningQuestionController : MonoBehaviour
 
         if (loadingText != null)
         {
-            loadingText.text = "You are:" + role.roleName;
+            loadingText.text = "正在进入角色...";
         }
 
-        StartCoroutine(EnterGameAfterDelay(role.startNodeId));
+        EnterRoleAndStartVideo(role);
+    }
+
+    private void EnterRoleAndStartVideo(RoleAssignResponse role)
+    {
+        HideQuestionHeader();
+        ClearOptions();
+
+        if (optionRoot != null)
+        {
+            optionRoot.gameObject.SetActive(false);
+        }
+
+        if (loadingText != null)
+        {
+            loadingText.gameObject.SetActive(false);
+        }
+
+        AudioClip roleClip = GetRoleAudioClip(role.roleId);
+        if (roleClip != null && roleAudioSource != null)
+        {
+            roleAudioSource.Stop();
+            roleAudioSource.clip = roleClip;
+            roleAudioSource.Play();
+        }
+        else if (roleClip == null)
+        {
+            Debug.LogWarning("OpeningQuestionController: role audio not found or not assigned for roleId=" + role.roleId + ", entering node directly.");
+        }
+        else
+        {
+            Debug.LogWarning("OpeningQuestionController: Role Audio Source is not assigned, entering node directly.");
+        }
+
+        StartCoroutine(EnterGame(role.startNodeId));
     }
 
     private IEnumerator EnterGameAfterDelay(string startNodeId)
     {
         yield return new WaitForSeconds(enterGameDelay);
+        yield return EnterGame(startNodeId);
+    }
+
+    private IEnumerator EnterGame(string startNodeId)
+    {
+        if (string.IsNullOrEmpty(startNodeId))
+        {
+            Debug.LogError("OpeningQuestionController: startNodeId is empty.");
+            isSubmitting = false;
+            yield break;
+        }
 
         if (questionPanel != null)
         {
@@ -670,6 +960,61 @@ public class OpeningQuestionController : MonoBehaviour
         }
 
         fmvController.PlayNodeFromOutside(startNodeId);
+    }
+
+    public void HideOpeningQuestionUIForExternalJump()
+    {
+        ClearOptions();
+
+        if (questionPanel != null)
+        {
+            questionPanel.SetActive(false);
+        }
+
+        if (titleText != null)
+        {
+            titleText.gameObject.SetActive(false);
+        }
+
+        if (questionText != null)
+        {
+            questionText.gameObject.SetActive(false);
+        }
+
+        if (progressText != null)
+        {
+            progressText.gameObject.SetActive(false);
+        }
+
+        if (loadingText != null)
+        {
+            loadingText.text = "";
+            loadingText.gameObject.SetActive(false);
+        }
+
+        if (optionRoot != null)
+        {
+            optionRoot.gameObject.SetActive(false);
+        }
+    }
+
+    private AudioClip GetRoleAudioClip(string roleId)
+    {
+        if (roleAudios == null || string.IsNullOrEmpty(roleId))
+        {
+            return null;
+        }
+
+        for (int i = 0; i < roleAudios.Length; i++)
+        {
+            RoleAudioData roleAudio = roleAudios[i];
+            if (roleAudio != null && roleAudio.roleId == roleId)
+            {
+                return roleAudio.audioClip;
+            }
+        }
+
+        return null;
     }
 
     private void SetButtonLabel(Button button, string label)

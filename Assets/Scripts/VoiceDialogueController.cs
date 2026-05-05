@@ -154,6 +154,27 @@ public class VoiceDialogueController : MonoBehaviour
         }
     }
 
+    public void HideDialoguePanelForExternalJump()
+    {
+        if (isRecording)
+        {
+            Microphone.End(microphoneDevice);
+            isRecording = false;
+        }
+
+        if (aiAudioSource != null)
+        {
+            aiAudioSource.Stop();
+        }
+
+        StopSpeakingVideo();
+
+        if (dialoguePanel != null)
+        {
+            dialoguePanel.SetActive(false);
+        }
+    }
+
     public void ToggleRecording()
     {
         if (isSubmitting)

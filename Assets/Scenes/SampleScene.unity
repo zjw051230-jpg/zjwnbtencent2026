@@ -1558,8 +1558,8 @@ MonoBehaviour:
 
     press again to send'
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: d246324f153d943409e8fac1193dc516, type: 2}
+  m_sharedMaterial: {fileID: -2562588459654663623, guid: d246324f153d943409e8fac1193dc516, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -1703,6 +1703,8 @@ MonoBehaviour:
   menuButtonPrefab: {fileID: 0}
   closeButton: {fileID: 0}
   fmvController: {fileID: 1321253497}
+  openingQuestionController: {fileID: 0}
+  voiceDialogueController: {fileID: 0}
 --- !u!1 &1348334814
 GameObject:
   m_ObjectHideFlags: 0
@@ -2072,17 +2074,26 @@ MonoBehaviour:
   optionButtonPrefab: {fileID: 7427279657017652504, guid: eb160256b5193b04bb857609a6cd8ce2, type: 3}
   blackScreenPanel: {fileID: 0}
   questionAudioSource: {fileID: 1489547529}
-  openingAudioClip: {fileID: 8300000, guid: 221a290d1e0917846ab27061e746cd4e, type: 3}
+  openingAudioClip: {fileID: 0}
   questionAudios:
   - {fileID: 8300000, guid: c2643793f98582940bb5be26404ef0fe, type: 3}
   - {fileID: 8300000, guid: 66f6f59c690f2be48a6fe1de6e71cb2c, type: 3}
   - {fileID: 8300000, guid: e55efd658236ed34d8c74b4a2879c1c7, type: 3}
   - {fileID: 8300000, guid: 71051f5c46ac30d45b5373cd8d13b414, type: 3}
+  openingVideoFileName: opening_video.mp4
+  openingVideoPlayer: {fileID: 1068950391}
+  roleAudioSource: {fileID: 1489547529}
+  roleAudios:
+  - roleId: Mozart
+    audioClip: {fileID: 8300000, guid: 0b820348886f18844bc5d660aa5eb1cb, type: 3}
+  - roleId: Einstein
+    audioClip: {fileID: 8300000, guid: c742a18a478f97f4b8269bc817a84e2b, type: 3}
   apiBaseUrl: http://localhost:3000
   roleApiUrl: http://localhost:3000/api/assign-role
   fmvController: {fileID: 1321253497}
   enterGameDelay: 1.5
   videoDisplay: {fileID: 1260961101}
+  waitForAccessKeySetup: 1
 --- !u!4 &1489547528
 Transform:
   m_ObjectHideFlags: 0

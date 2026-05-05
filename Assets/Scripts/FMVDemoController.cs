@@ -35,6 +35,11 @@ public class FMVDemoController : MonoBehaviour
     private bool storyLoaded;
     private bool choicesVisible;
     private bool currentVideoStarted;
+    private bool previewPlayback;
+    private bool isMenuPaused;
+    private bool wasVideoPausedForMenu;
+
+    public bool IsMenuPaused => isMenuPaused;
 
     private void Awake()
     {
@@ -113,7 +118,7 @@ public class FMVDemoController : MonoBehaviour
 
     private void Update()
     {
-        if (currentNode == null || choicesVisible || videoPlayer == null)
+        if (currentNode == null || choicesVisible || videoPlayer == null || previewPlayback || isMenuPaused)
         {
             return;
         }
@@ -143,7 +148,18 @@ public class FMVDemoController : MonoBehaviour
 
     public void PlayNodeFromOutside(string nodeId)
     {
+        HideChoiceUIForExternalJump();
+        if (voiceDialogueController != null)
+        {
+            voiceDialogueController.HideDialoguePanelForExternalJump();
+        }
+
         PlayNode(nodeId);
+    }
+
+    public void PlayNodePreviewFromOutside(string nodeId)
+    {
+        PlayNode(nodeId, true);
     }
 
     public List<StoryNode> GetMenuNodes()
@@ -167,22 +183,56 @@ public class FMVDemoController : MonoBehaviour
 
     public void PauseCurrentVideo()
     {
-        if (videoPlayer != null && videoPlayer.isPlaying)
-        {
-            videoPlayer.Pause();
-        }
+        PausePlaybackForMenu();
     }
 
     public void ResumeCurrentVideo()
     {
-        if (videoPlayer != null && !videoPlayer.isPlaying && currentNode != null && !choicesVisible)
+        ResumePlaybackFromMenu();
+    }
+
+    public void PausePlaybackForMenu()
+    {
+        if (videoPlayer != null && videoPlayer.isPlaying)
+        {
+            wasVideoPausedForMenu = true;
+            videoPlayer.Pause();
+        }
+        else
+        {
+            wasVideoPausedForMenu = false;
+        }
+
+        isMenuPaused = true;
+    }
+
+    public void ResumePlaybackFromMenu()
+    {
+        isMenuPaused = false;
+
+        if (wasVideoPausedForMenu && videoPlayer != null)
         {
             videoPlayer.Play();
         }
+
+        wasVideoPausedForMenu = false;
+    }
+
+    public void CancelMenuPauseForExternalJump()
+    {
+        isMenuPaused = false;
+        wasVideoPausedForMenu = false;
     }
 
     public void PlayNode(string nodeId)
     {
+        PlayNode(nodeId, false);
+    }
+
+    private void PlayNode(string nodeId, bool previewOnly)
+    {
+        isMenuPaused = false;
+
         if (!EnsureStoryLoaded())
         {
             return;
@@ -229,14 +279,18 @@ public class FMVDemoController : MonoBehaviour
         currentNode = node;
         choicesVisible = false;
         currentVideoStarted = false;
+        previewPlayback = previewOnly;
 
         if (endingText != null)
         {
             endingText.gameObject.SetActive(false);
         }
 
-        PlayerPrefs.SetString(SaveKey, nodeId);
-        PlayerPrefs.Save();
+        if (!previewOnly)
+        {
+            PlayerPrefs.SetString(SaveKey, nodeId);
+            PlayerPrefs.Save();
+        }
 
         videoPlayer.Stop();
         ClearVideoOutput();
@@ -250,7 +304,7 @@ public class FMVDemoController : MonoBehaviour
         videoPlayer.url = BuildVideoUrl(node.video);
         videoPlayer.Prepare();
 
-        Debug.Log("FMVDemoController: preparing node " + node.id + " with video " + videoPlayer.url);
+        Debug.Log("FMVDemoController: preparing node " + node.id + " with video " + videoPlayer.url + (previewOnly ? " preview" : ""));
     }
 
     public void RestartGame()
@@ -433,8 +487,25 @@ public class FMVDemoController : MonoBehaviour
         }
     }
 
+    public void HideChoiceUIForExternalJump()
+    {
+        choicesVisible = false;
+        ClearChoices();
+
+        if (endingText != null)
+        {
+            endingText.gameObject.SetActive(false);
+        }
+    }
+
     private void OnVideoFinished(VideoPlayer player)
     {
+        if (isMenuPaused)
+        {
+            Debug.Log("FMVDemoController: video finished while menu paused, skip auto next.");
+            return;
+        }
+
         if (currentNode == null)
         {
             return;
@@ -447,6 +518,12 @@ public class FMVDemoController : MonoBehaviour
         }
 
         Debug.Log("FMVDemoController: video finished for node " + currentNode.id);
+
+        if (previewPlayback)
+        {
+            currentVideoStarted = false;
+            return;
+        }
 
         if (!string.IsNullOrEmpty(currentNode.defaultNext))
         {

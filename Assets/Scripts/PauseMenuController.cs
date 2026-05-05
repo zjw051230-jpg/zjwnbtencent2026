@@ -10,9 +10,13 @@ public class PauseMenuController : MonoBehaviour
     public Button menuButtonPrefab;
     public Button closeButton;
     public FMVDemoController fmvController;
+    public OpeningQuestionController openingQuestionController;
+    public VoiceDialogueController voiceDialogueController;
 
     private readonly List<Button> generatedButtons = new List<Button>();
     private bool isOpen;
+    private TMP_FontAsset menuFontAsset;
+    private Font unityMenuFont;
 
     private void Awake()
     {
@@ -68,7 +72,12 @@ public class PauseMenuController : MonoBehaviour
 
         isOpen = true;
         pauseMenuPanel.SetActive(true);
-        fmvController.PauseCurrentVideo();
+        fmvController.PausePlaybackForMenu();
+        if (openingQuestionController != null)
+        {
+            openingQuestionController.PauseOpeningFlowForMenu();
+        }
+
         RebuildButtons();
     }
 
@@ -85,15 +94,32 @@ public class PauseMenuController : MonoBehaviour
 
         if (fmvController != null)
         {
-            fmvController.ResumeCurrentVideo();
+            fmvController.ResumePlaybackFromMenu();
+        }
+
+        if (openingQuestionController != null)
+        {
+            openingQuestionController.ResumeOpeningFlowFromMenu();
         }
     }
 
     private void ResolveReferences()
     {
+        ResolveMenuFonts();
+
         if (fmvController == null)
         {
             fmvController = FindObjectOfType<FMVDemoController>(true);
+        }
+
+        if (openingQuestionController == null)
+        {
+            openingQuestionController = FindObjectOfType<OpeningQuestionController>(true);
+        }
+
+        if (voiceDialogueController == null)
+        {
+            voiceDialogueController = FindObjectOfType<VoiceDialogueController>(true);
         }
 
         if (pauseMenuPanel == null)
@@ -130,6 +156,35 @@ public class PauseMenuController : MonoBehaviour
             if (prefabObject != null)
             {
                 menuButtonPrefab = prefabObject.GetComponent<Button>();
+            }
+        }
+    }
+
+    private void ResolveMenuFonts()
+    {
+        if (menuFontAsset == null)
+        {
+            TMP_Text[] tmpTexts = FindObjectsOfType<TMP_Text>(true);
+            foreach (TMP_Text tmpText in tmpTexts)
+            {
+                if (tmpText != null && tmpText.font != null && tmpText.font.name.Contains("SIMFANG"))
+                {
+                    menuFontAsset = tmpText.font;
+                    break;
+                }
+            }
+        }
+
+        if (unityMenuFont == null)
+        {
+            Text[] unityTexts = FindObjectsOfType<Text>(true);
+            foreach (Text unityText in unityTexts)
+            {
+                if (unityText != null && unityText.font != null && unityText.font.name.Contains("SIMFANG"))
+                {
+                    unityMenuFont = unityText.font;
+                    break;
+                }
             }
         }
     }
@@ -203,6 +258,8 @@ public class PauseMenuController : MonoBehaviour
             button.onClick.AddListener(() =>
             {
                 CloseMenuForJump();
+                CancelMenuPauseForJump();
+                ClearUiBeforeJump();
                 fmvController.PlayNodeFromOutside(nodeId);
             });
         }
@@ -223,6 +280,7 @@ public class PauseMenuController : MonoBehaviour
         button.gameObject.SetActive(true);
         button.interactable = true;
         button.onClick.RemoveAllListeners();
+        ApplyButtonFont(button);
 
         RectTransform rectTransform = button.GetComponent<RectTransform>();
         if (rectTransform != null)
@@ -285,6 +343,10 @@ public class PauseMenuController : MonoBehaviour
         text.fontSize = fontSize;
         text.color = Color.white;
         text.alignment = TextAlignmentOptions.Center;
+        if (menuFontAsset != null)
+        {
+            text.font = menuFontAsset;
+        }
         return text;
     }
 
@@ -298,6 +360,44 @@ public class PauseMenuController : MonoBehaviour
         }
 
         isOpen = false;
+    }
+
+    private void CancelMenuPauseForJump()
+    {
+        if (fmvController != null)
+        {
+            fmvController.CancelMenuPauseForExternalJump();
+        }
+
+        if (openingQuestionController != null)
+        {
+            openingQuestionController.CancelMenuPauseForExternalJump();
+        }
+    }
+
+    private void ClearUiBeforeJump()
+    {
+        if (pauseMenuPanel != null)
+        {
+            pauseMenuPanel.SetActive(false);
+        }
+
+        ClearButtons();
+
+        if (openingQuestionController != null)
+        {
+            openingQuestionController.HideOpeningQuestionUIForExternalJump();
+        }
+
+        if (fmvController != null)
+        {
+            fmvController.HideChoiceUIForExternalJump();
+        }
+
+        if (voiceDialogueController != null)
+        {
+            voiceDialogueController.HideDialoguePanelForExternalJump();
+        }
     }
 
     private void ClearButtons()
@@ -318,6 +418,11 @@ public class PauseMenuController : MonoBehaviour
         TMP_Text tmpText = button.GetComponentInChildren<TMP_Text>(true);
         if (tmpText != null)
         {
+            if (menuFontAsset != null)
+            {
+                tmpText.font = menuFontAsset;
+            }
+
             tmpText.text = label;
             return;
         }
@@ -325,7 +430,38 @@ public class PauseMenuController : MonoBehaviour
         Text unityText = button.GetComponentInChildren<Text>(true);
         if (unityText != null)
         {
+            if (unityMenuFont != null)
+            {
+                unityText.font = unityMenuFont;
+            }
+
             unityText.text = label;
+        }
+    }
+
+    private void ApplyButtonFont(Button button)
+    {
+        if (button == null)
+        {
+            return;
+        }
+
+        TMP_Text[] tmpTexts = button.GetComponentsInChildren<TMP_Text>(true);
+        foreach (TMP_Text tmpText in tmpTexts)
+        {
+            if (tmpText != null && menuFontAsset != null)
+            {
+                tmpText.font = menuFontAsset;
+            }
+        }
+
+        Text[] unityTexts = button.GetComponentsInChildren<Text>(true);
+        foreach (Text unityText in unityTexts)
+        {
+            if (unityText != null && unityMenuFont != null)
+            {
+                unityText.font = unityMenuFont;
+            }
         }
     }
 }
