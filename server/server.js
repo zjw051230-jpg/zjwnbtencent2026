@@ -5,6 +5,7 @@ const path = require("path");
 const crypto = require("crypto");
 const multer = require("multer");
 const OpenAI = require("openai");
+const { createDoubaoVoiceDialogue } = require("./services/doubaoRealtimeVoiceService.js");
 require("dotenv").config();
 
 const app = express();
@@ -18,6 +19,7 @@ const transcriptionModel = process.env.OPENAI_TRANSCRIPTION_MODEL || "gpt-4o-min
 const ttsModel = process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts";
 const ttsVoice = process.env.OPENAI_TTS_VOICE || "alloy";
 const publicBaseUrl = process.env.PUBLIC_BASE_URL || `http://localhost:${port}`;
+const useDoubaoRealtime = process.env.USE_DOUBAO_REALTIME === "true";
 const uploadDir = path.join(__dirname, "uploads");
 const generatedAudioDir = path.join(__dirname, "public", "generated-audio");
 
@@ -124,17 +126,46 @@ app.post("/api/voice-dialogue", upload.single("audio"), async (req, res) => {
     const sceneId = toStringValue(req.body.sceneId) || "dialogue_scene";
 
     console.log(
-      `[voice-dialogue] roleId=${roleId}, sceneId=${sceneId}, file=${uploadedFile.originalname}, size=${uploadedFile.size}`
+      `[voice-dialogue] roleId=${roleId}, sceneId=${sceneId}, file=${uploadedFile.originalname}, size=${uploadedFile.size}, useDoubaoRealtime=${useDoubaoRealtime}`
     );
 
-    const result = await createVoiceDialogue({
-      audioPath: uploadedFile.path,
-      roleId,
-      roleName,
-      sceneId
-    });
+    let result;
 
-    res.json(result);
+    if (useDoubaoRealtime) {
+      try {
+        const doubaoResult = await createDoubaoVoiceDialogue({
+          audioPath: uploadedFile.path,
+          roleId,
+          roleName,
+          sceneId,
+          outputDir: generatedAudioDir,
+          publicBaseUrl
+        });
+
+        if (isValidVoiceDialogueResponse(doubaoResult)) {
+          if (doubaoResult.error === "DOUBAO_REALTIME_NOT_IMPLEMENTED") {
+            console.warn("[voice-dialogue] Doubao realtime returned NOT_IMPLEMENTED.");
+          }
+
+          result = doubaoResult;
+        } else {
+          console.warn("[voice-dialogue] Doubao realtime returned invalid response, falling back to legacy path.");
+        }
+      } catch (error) {
+        console.error("[voice-dialogue] Doubao realtime failed, falling back to legacy path:", getErrorMessage(error));
+      }
+    }
+
+    if (!result) {
+      result = await createVoiceDialogue({
+        audioPath: uploadedFile.path,
+        roleId,
+        roleName,
+        sceneId
+      });
+    }
+
+    res.json(ensureVoiceDialogueResponse(result));
   } catch (error) {
     console.error("[voice-dialogue] failed:", getErrorMessage(error));
     res.json(createDefaultDialogueResponse(getErrorMessage(error)));
@@ -375,6 +406,29 @@ function createDefaultDialogueResponse(errorMessage = "") {
   };
 }
 
+function isValidVoiceDialogueResponse(value) {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    typeof value.ok === "boolean" &&
+    typeof value.transcript === "string" &&
+    typeof value.replyText === "string" &&
+    typeof value.audioUrl === "string" &&
+    typeof value.speakingVideoNodeId === "string" &&
+    typeof value.emotion === "string" &&
+    typeof value.error === "string"
+  );
+}
+
+function ensureVoiceDialogueResponse(value) {
+  if (isValidVoiceDialogueResponse(value)) {
+    return value;
+  }
+
+  console.warn("[voice-dialogue] response is invalid, return default dialogue response.");
+  return createDefaultDialogueResponse();
+}
+
 function normalizePayload(body) {
   const answers = Array.isArray(body && body.answers)
     ? body.answers.map((answer) => ({
@@ -507,6 +561,7 @@ function getErrorMessage(error) {
 
 app.listen(port, () => {
   console.log(`FMV demo server listening at http://localhost:${port}`);
+  console.log(`USE_DOUBAO_REALTIME: ${useDoubaoRealtime}`);
   console.log(`Ark configured: ${Boolean(arkApiKey)}`);
   console.log(`Ark model: ${arkModel}`);
   console.log(`OpenAI configured: ${Boolean(openai)}`);

@@ -1,7 +1,7 @@
-import WebSocket from "ws";
-import crypto from "crypto";
-import fs from "fs";
-import path from "path";
+const WebSocket = require("ws");
+const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 
 const DOUBAO_REALTIME_URL = "wss://openspeech.bytedance.com/api/v3/realtime/dialogue";
 const DEFAULT_RESOURCE_ID = "volc.speech.dialog";
@@ -9,7 +9,7 @@ const DEFAULT_APP_KEY = "PlgvMymc7f3tQnJ6";
 const DEFAULT_MODEL = "1.2.1.1";
 const DEFAULT_SPEAKER = "zh_male_yunzhou_jupiter_bigtts";
 
-export async function createDoubaoVoiceDialogue({
+async function createDoubaoVoiceDialogue({
   audioPath,
   roleId,
   roleName,
@@ -134,3 +134,7 @@ function getEnv(name) {
 // - Detect TTSEnded to finish a dialogue turn.
 // - Save returned TTS audio into outputDir.
 // - Return Unity-compatible JSON: transcript, replyText, audioUrl, speakingVideoNodeId, emotion.
+
+module.exports = {
+  createDoubaoVoiceDialogue
+};
