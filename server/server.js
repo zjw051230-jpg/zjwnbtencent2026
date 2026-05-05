@@ -180,15 +180,15 @@ app.post("/api/voice-dialogue", upload.single("audio"), async (req, res) => {
           if (doubaoResult.ok) {
             result = doubaoResult;
           } else {
-            console.warn("[voice-dialogue] Doubao realtime unavailable, falling back to demo mock response.");
-            result = createDemoVoiceMockResponse();
+            console.warn(`[voice-dialogue] Doubao realtime unavailable, falling back to demo mock response: ${doubaoResult.error || "unknown reason"}`);
+            result = createDemoVoiceMockResponse(doubaoResult.error || "DOUBAO_REALTIME_FAILED");
           }
         } else {
           console.warn("[voice-dialogue] Doubao realtime returned invalid response, falling back to legacy path.");
         }
       } catch (error) {
         console.error("[voice-dialogue] Doubao realtime failed, falling back to demo mock response:", getErrorMessage(error));
-        result = createDemoVoiceMockResponse();
+        result = createDemoVoiceMockResponse(getErrorMessage(error));
       }
     }
 
@@ -562,7 +562,7 @@ function normalizeRole(role) {
   };
 }
 
-function createDemoVoiceMockResponse() {
+function createDemoVoiceMockResponse(errorMessage = "") {
   return {
     ok: true,
     transcript: "我刚才听到了一些奇怪的声音，你觉得我们现在应该怎么办？",
@@ -570,7 +570,8 @@ function createDemoVoiceMockResponse() {
     audioUrl: "",
     speakingVideoNodeId: "role_speaking",
     emotion: "calm",
-    error: ""
+    source: "mock",
+    error: errorMessage
   };
 }
 
