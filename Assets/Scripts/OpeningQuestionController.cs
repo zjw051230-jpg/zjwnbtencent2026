@@ -19,9 +19,11 @@ public class OpeningQuestionController : MonoBehaviour
     public TMP_Text loadingText;
     public Transform optionRoot;
     public Button optionButtonPrefab;
+    public GameObject blackScreenPanel;
 
     [Header("Question Audio")]
     public AudioSource questionAudioSource;
+    public AudioClip openingAudioClip;
     public AudioClip[] questionAudios;
 
     [Header("API")]
@@ -45,6 +47,7 @@ public class OpeningQuestionController : MonoBehaviour
         EnsureCanvasRaycaster();
         ResolveVideoDisplay();
         ResolveQuestionAudioSource();
+        ResolveBlackScreenPanel();
         HideVideoDisplay();
     }
 
@@ -63,12 +66,12 @@ public class OpeningQuestionController : MonoBehaviour
 
         if (questionPanel != null)
         {
-            questionPanel.SetActive(true);
+            questionPanel.SetActive(false);
         }
 
         HideVideoDisplay();
 
-        ShowQuestion(0);
+        StartCoroutine(PlayOpeningThenStartQuestions());
     }
 
     private void ResolveVideoDisplay()
@@ -97,6 +100,125 @@ public class OpeningQuestionController : MonoBehaviour
         {
             questionAudioSource = gameObject.AddComponent<AudioSource>();
         }
+    }
+
+    private void ResolveBlackScreenPanel()
+    {
+        if (blackScreenPanel != null)
+        {
+            return;
+        }
+
+        GameObject found = GameObject.Find("BlackScreenPanel");
+        if (found != null)
+        {
+            blackScreenPanel = found;
+            return;
+        }
+
+        Canvas canvas = null;
+        if (questionPanel != null)
+        {
+            canvas = questionPanel.GetComponentInParent<Canvas>(true);
+        }
+
+        if (canvas == null)
+        {
+            canvas = FindObjectOfType<Canvas>(true);
+        }
+
+        if (canvas == null)
+        {
+            Debug.LogWarning("OpeningQuestionController: BlackScreenPanel is not assigned and Canvas was not found.");
+            return;
+        }
+
+        blackScreenPanel = new GameObject("BlackScreenPanel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        blackScreenPanel.transform.SetParent(canvas.transform, false);
+
+        RectTransform rectTransform = blackScreenPanel.GetComponent<RectTransform>();
+        rectTransform.anchorMin = Vector2.zero;
+        rectTransform.anchorMax = Vector2.one;
+        rectTransform.offsetMin = Vector2.zero;
+        rectTransform.offsetMax = Vector2.zero;
+
+        Image image = blackScreenPanel.GetComponent<Image>();
+        image.color = Color.black;
+
+        blackScreenPanel.SetActive(false);
+    }
+
+    private IEnumerator PlayOpeningThenStartQuestions()
+    {
+        HideVideoDisplay();
+        ClearOptions();
+
+        if (questionPanel != null)
+        {
+            questionPanel.SetActive(false);
+        }
+
+        if (questionText != null)
+        {
+            questionText.gameObject.SetActive(false);
+        }
+
+        if (progressText != null)
+        {
+            progressText.gameObject.SetActive(false);
+        }
+
+        if (loadingText != null)
+        {
+            loadingText.gameObject.SetActive(false);
+        }
+
+        if (optionRoot != null)
+        {
+            optionRoot.gameObject.SetActive(false);
+        }
+
+        if (blackScreenPanel != null)
+        {
+            blackScreenPanel.SetActive(true);
+        }
+        else
+        {
+            Debug.LogWarning("OpeningQuestionController: BlackScreenPanel is not assigned, opening audio will still play.");
+        }
+
+        if (openingAudioClip == null)
+        {
+            Debug.LogWarning("OpeningQuestionController: opening audio clip is empty, skip opening audio.");
+        }
+        else if (questionAudioSource == null)
+        {
+            Debug.LogWarning("OpeningQuestionController: Question Audio Source is not assigned, skip opening audio.");
+        }
+        else
+        {
+            questionAudioSource.Stop();
+            questionAudioSource.clip = openingAudioClip;
+            questionAudioSource.Play();
+            yield return new WaitWhile(() => questionAudioSource != null && questionAudioSource.isPlaying);
+        }
+
+        if (blackScreenPanel != null)
+        {
+            blackScreenPanel.SetActive(false);
+        }
+
+        if (questionPanel != null)
+        {
+            questionPanel.SetActive(true);
+        }
+
+        if (progressText != null)
+        {
+            progressText.gameObject.SetActive(true);
+        }
+
+        ShowQuestion(0);
     }
 
     private void HideVideoDisplay()
