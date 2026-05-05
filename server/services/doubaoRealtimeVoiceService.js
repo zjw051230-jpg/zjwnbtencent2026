@@ -15,9 +15,10 @@ async function createDoubaoVoiceDialogue({
   roleName,
   sceneId,
   outputDir,
-  publicBaseUrl
+  publicBaseUrl,
+  runtimeConfig
 }) {
-  const config = readDoubaoRealtimeConfig();
+  const config = readDoubaoRealtimeConfig(runtimeConfig);
   const missingConfig = getMissingRequiredConfig(config);
   const connectId = crypto.randomUUID();
   const sessionId = crypto.randomUUID();
@@ -52,11 +53,11 @@ async function createDoubaoVoiceDialogue({
   };
 }
 
-function readDoubaoRealtimeConfig() {
+function readDoubaoRealtimeConfig(runtimeConfig = {}) {
   return {
     appId: getEnv("DOUBAO_REALTIME_APP_ID"),
-    accessKey: getEnv("DOUBAO_REALTIME_ACCESS_KEY"),
-    resourceId: getEnv("DOUBAO_REALTIME_RESOURCE_ID") || DEFAULT_RESOURCE_ID,
+    accessKey: toStringValue(runtimeConfig.accessKey),
+    resourceId: DEFAULT_RESOURCE_ID,
     appKey: getEnv("DOUBAO_REALTIME_APP_KEY") || DEFAULT_APP_KEY,
     model: getEnv("DOUBAO_REALTIME_MODEL") || DEFAULT_MODEL,
     speaker: getEnv("DOUBAO_REALTIME_SPEAKER") || DEFAULT_SPEAKER
@@ -115,6 +116,10 @@ function buildStartSessionPayload({ config, sessionId, roleId, roleName, sceneId
       packet_size_bytes: 640
     }
   };
+}
+
+function toStringValue(value) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function getEnv(name) {

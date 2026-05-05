@@ -21,6 +21,9 @@ const ttsVoice = process.env.OPENAI_TTS_VOICE || "alloy";
 const publicBaseUrl = process.env.PUBLIC_BASE_URL || `http://localhost:${port}`;
 const useDoubaoRealtime = process.env.USE_DOUBAO_REALTIME === "true";
 const demoVoiceMock = process.env.DEMO_VOICE_MOCK === "true";
+const doubaoRuntimeState = {
+  accessKey: ""
+};
 const uploadDir = path.join(__dirname, "uploads");
 const generatedAudioDir = path.join(__dirname, "public", "generated-audio");
 
@@ -91,7 +94,30 @@ app.get("/health", (req, res) => {
     ok: true,
     service: "fmv-demo-server",
     arkConfigured: Boolean(arkApiKey),
-    openaiConfigured: Boolean(openai)
+    openaiConfigured: Boolean(openai),
+    demoVoiceMock,
+    doubaoRealtimeEnabled: useDoubaoRealtime,
+    doubaoConfigured: isDoubaoConfigured(),
+    doubaoRuntimeConfigured: isDoubaoRuntimeConfigured()
+  });
+});
+
+app.post("/api/runtime-config/doubao", (req, res) => {
+  const accessKey = normalizeAccessKey(req.body && req.body.accessKey);
+
+  if (!accessKey) {
+    doubaoRuntimeState.accessKey = "";
+    res.json({
+      ok: false,
+      error: "accessKey is required"
+    });
+    return;
+  }
+
+  doubaoRuntimeState.accessKey = accessKey;
+  res.json({
+    ok: true,
+    doubaoRuntimeConfigured: true
   });
 });
 
@@ -146,20 +172,23 @@ app.post("/api/voice-dialogue", upload.single("audio"), async (req, res) => {
           roleName,
           sceneId,
           outputDir: generatedAudioDir,
-          publicBaseUrl
+          publicBaseUrl,
+          runtimeConfig: readDoubaoRuntimeState()
         });
 
         if (isValidVoiceDialogueResponse(doubaoResult)) {
-          if (doubaoResult.error === "DOUBAO_REALTIME_NOT_IMPLEMENTED") {
-            console.warn("[voice-dialogue] Doubao realtime returned NOT_IMPLEMENTED.");
+          if (doubaoResult.ok) {
+            result = doubaoResult;
+          } else {
+            console.warn("[voice-dialogue] Doubao realtime unavailable, falling back to demo mock response.");
+            result = createDemoVoiceMockResponse();
           }
-
-          result = doubaoResult;
         } else {
           console.warn("[voice-dialogue] Doubao realtime returned invalid response, falling back to legacy path.");
         }
       } catch (error) {
-        console.error("[voice-dialogue] Doubao realtime failed, falling back to legacy path:", getErrorMessage(error));
+        console.error("[voice-dialogue] Doubao realtime failed, falling back to demo mock response:", getErrorMessage(error));
+        result = createDemoVoiceMockResponse();
       }
     }
 
@@ -540,8 +569,27 @@ function createDemoVoiceMockResponse() {
     replyText: "先别慌。我们先确认声音的来源，再决定要不要继续往前走。",
     audioUrl: "",
     speakingVideoNodeId: "role_speaking",
-    emotion: "calm"
+    emotion: "calm",
+    error: ""
   };
+}
+
+function readDoubaoRuntimeState() {
+  return {
+    accessKey: doubaoRuntimeState.accessKey
+  };
+}
+
+function isDoubaoConfigured() {
+  return Boolean(normalizeEnvValue(process.env.DOUBAO_REALTIME_APP_ID));
+}
+
+function isDoubaoRuntimeConfigured() {
+  return Boolean(normalizeAccessKey(doubaoRuntimeState.accessKey));
+}
+
+function normalizeAccessKey(value) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function toStringValue(value) {
