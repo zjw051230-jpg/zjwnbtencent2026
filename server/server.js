@@ -20,6 +20,7 @@ const ttsModel = process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts";
 const ttsVoice = process.env.OPENAI_TTS_VOICE || "alloy";
 const publicBaseUrl = process.env.PUBLIC_BASE_URL || `http://localhost:${port}`;
 const useDoubaoRealtime = process.env.USE_DOUBAO_REALTIME === "true";
+const demoVoiceMock = process.env.DEMO_VOICE_MOCK === "true";
 const uploadDir = path.join(__dirname, "uploads");
 const generatedAudioDir = path.join(__dirname, "public", "generated-audio");
 
@@ -126,8 +127,14 @@ app.post("/api/voice-dialogue", upload.single("audio"), async (req, res) => {
     const sceneId = toStringValue(req.body.sceneId) || "dialogue_scene";
 
     console.log(
-      `[voice-dialogue] roleId=${roleId}, sceneId=${sceneId}, file=${uploadedFile.originalname}, size=${uploadedFile.size}, useDoubaoRealtime=${useDoubaoRealtime}`
+      `[voice-dialogue] roleId=${roleId}, sceneId=${sceneId}, file=${uploadedFile.originalname}, size=${uploadedFile.size}, useDoubaoRealtime=${useDoubaoRealtime}, demoVoiceMock=${demoVoiceMock}`
     );
+
+    if (demoVoiceMock) {
+      console.log("[voice-dialogue] DEMO_VOICE_MOCK enabled, returning mock transcript and reply.");
+      res.json(createDemoVoiceMockResponse());
+      return;
+    }
 
     let result;
 
@@ -526,6 +533,17 @@ function normalizeRole(role) {
   };
 }
 
+function createDemoVoiceMockResponse() {
+  return {
+    ok: true,
+    transcript: "我刚才听到了一些奇怪的声音，你觉得我们现在应该怎么办？",
+    replyText: "先别慌。我们先确认声音的来源，再决定要不要继续往前走。",
+    audioUrl: "",
+    speakingVideoNodeId: "role_speaking",
+    emotion: "calm"
+  };
+}
+
 function toStringValue(value) {
   return typeof value === "string" ? value : "";
 }
@@ -562,6 +580,7 @@ function getErrorMessage(error) {
 app.listen(port, () => {
   console.log(`FMV demo server listening at http://localhost:${port}`);
   console.log(`USE_DOUBAO_REALTIME: ${useDoubaoRealtime}`);
+  console.log(`DEMO_VOICE_MOCK: ${demoVoiceMock}`);
   console.log(`Ark configured: ${Boolean(arkApiKey)}`);
   console.log(`Ark model: ${arkModel}`);
   console.log(`OpenAI configured: ${Boolean(openai)}`);
