@@ -1643,6 +1643,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1321253496}
   - component: {fileID: 1321253497}
+  - component: {fileID: 1321253498}
   m_Layer: 0
   m_Name: GameController
   m_TagString: Untagged
@@ -1685,6 +1686,23 @@ MonoBehaviour:
   endingText: {fileID: 0}
   autoPlayOnStart: 0
   voiceDialogueController: {fileID: 1455054589}
+--- !u!114 &1321253498
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1321253495}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a34c3c3f26a846c3a8f2036d9a47c5b1, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  pauseMenuPanel: {fileID: 0}
+  menuButtonRoot: {fileID: 0}
+  menuButtonPrefab: {fileID: 0}
+  closeButton: {fileID: 0}
+  fmvController: {fileID: 1321253497}
 --- !u!1 &1348334814
 GameObject:
   m_ObjectHideFlags: 0
