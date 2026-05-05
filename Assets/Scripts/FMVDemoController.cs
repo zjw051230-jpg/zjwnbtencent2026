@@ -643,7 +643,8 @@ public class FMVDemoController : MonoBehaviour
 
         string roleId = PlayerPrefs.GetString("PLAYER_ROLE_ID", "investigator");
         string roleName = PlayerPrefs.GetString("PLAYER_ROLE_NAME", "调查者");
-        voiceDialogueController.OpenDialogue(roleId, roleName, node.id);
+        Debug.Log($"[FMV] OpenVoiceDialogueNode id={node.id}, video={node.video}, defaultNext={node.defaultNext}");
+        voiceDialogueController.OpenDialogue(roleId, roleName, node.id, node.video, node.defaultNext, this);
 
         Debug.Log("FMVDemoController: opened voice dialogue node " + node.id);
     }

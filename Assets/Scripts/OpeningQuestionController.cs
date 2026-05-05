@@ -932,6 +932,45 @@ public class OpeningQuestionController : MonoBehaviour
         StartCoroutine(EnterGame(role.startNodeId));
     }
 
+    public void EnterRoleAndStartVideoDirectly(RoleAssignResponse role)
+    {
+        if (role == null || string.IsNullOrEmpty(role.startNodeId))
+        {
+            Debug.LogError("OpeningQuestionController: direct role entry has empty startNodeId.");
+            return;
+        }
+
+        StopAllCoroutines();
+        isSubmitting = false;
+        isChangingQuestion = false;
+        HideOpeningQuestionUIForExternalJump();
+
+        AudioClip roleClip = GetRoleAudioClip(role.roleId);
+        if (roleClip != null && roleAudioSource != null)
+        {
+            roleAudioSource.Stop();
+            roleAudioSource.clip = roleClip;
+            roleAudioSource.Play();
+        }
+        else if (roleClip == null)
+        {
+            Debug.LogWarning("OpeningQuestionController: role audio not found or not assigned for roleId=" + role.roleId + ", entering node directly.");
+        }
+        else
+        {
+            Debug.LogWarning("OpeningQuestionController: Role Audio Source is not assigned, entering node directly.");
+        }
+
+        if (fmvController != null)
+        {
+            fmvController.PlayNodeFromOutside(role.startNodeId);
+        }
+        else
+        {
+            Debug.LogError("OpeningQuestionController: FMVDemoController is not assigned.");
+        }
+    }
+
     private IEnumerator EnterGameAfterDelay(string startNodeId)
     {
         yield return new WaitForSeconds(enterGameDelay);

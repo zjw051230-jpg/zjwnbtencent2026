@@ -14,6 +14,34 @@
       "id": "mozart_before_main",
       "video": "mozart_before_main.mp4",
       "choiceTime": -1,
+      "defaultNext": "mozart_main1",
+      "showInMenu": false,
+      "menuTitle": "\u83ab\u624e\u7279\u4e3b\u7ebf\u524d\u8282\u70b9",
+      "choices": []
+    },
+    {
+      "id": "mozart_main1",
+      "video": "mozart_main1.mp4",
+      "choiceTime": -1,
+      "defaultNext": "dialogue_Mozart",
+      "showInMenu": false,
+      "menuTitle": "\u83ab\u624e\u7279\u4e3b\u7ebf\u524d\u8282\u70b9",
+      "choices": []
+    },
+    {
+      "id": "dialogue_Mozart",
+      "video": "dialogue_Mozart.mp4",
+      "eventType": "voiceDialogue",
+      "choiceTime": -1,
+      "defaultNext": "mozart_main2",
+      "showInMenu": true,
+      "menuTitle": "\u8df3\u5230\u83ab\u624e\u7279\u5bf9\u8bdd\u573a\u666f",
+      "choices": []
+    },
+    {
+      "id": "mozart_main2",
+      "video": "mozart_main2.mp4",
+      "choiceTime": -1,
       "defaultNext": "",
       "showInMenu": false,
       "menuTitle": "\u83ab\u624e\u7279\u4e3b\u7ebf\u524d\u8282\u70b9",
@@ -32,9 +60,19 @@
       "id": "einstein_before_main",
       "video": "einstein_before_main.mp4",
       "choiceTime": -1,
-      "defaultNext": "",
+      "defaultNext": "dialogue_Einstein",
       "showInMenu": false,
       "menuTitle": "\u7231\u56e0\u65af\u5766\u4e3b\u7ebf\u524d\u8282\u70b9",
+      "choices": []
+    },
+    {
+      "id": "dialogue_Einstein",
+      "video": "dialogue_Einstein.mp4",
+      "eventType": "voiceDialogue",
+      "choiceTime": -1,
+      "defaultNext": "",
+      "showInMenu": true,
+      "menuTitle": "\u8df3\u5230\u7231\u56e0\u65af\u5766\u5bf9\u8bdd\u573a\u666f",
       "choices": []
     },
     {
@@ -43,7 +81,7 @@
       "eventType": "voiceDialogue",
       "choiceTime": -1,
       "defaultNext": "",
-      "showInMenu": true,
+      "showInMenu": false,
       "menuTitle": "\u8fdb\u5165\u8bed\u97f3\u5bf9\u8bdd",
       "choices": []
     }
