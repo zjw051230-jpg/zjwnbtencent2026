@@ -73,6 +73,12 @@ npm start
 http://localhost:3000
 ```
 
+豆包 Realtime 开关说明：
+
+- `USE_DOUBAO_REALTIME=false`：默认关闭，`/api/voice-dialogue` 继续走现有旧逻辑。
+- `USE_DOUBAO_REALTIME=true`：优先尝试调用豆包 Realtime service。
+- 当前阶段仍是安全兜底接入，不代表完整 ASR/TTS 和 WebSocket 二进制协议已经完成。
+
 ## 4. 环境变量
 
 `.env.example` 至少包含：
