@@ -20,6 +20,10 @@ public class OpeningQuestionController : MonoBehaviour
     public Transform optionRoot;
     public Button optionButtonPrefab;
 
+    [Header("Question Audio")]
+    public AudioSource questionAudioSource;
+    public AudioClip[] questionAudios;
+
     [Header("API")]
     public string roleApiUrl = "http://localhost:3000/api/assign-role";
 
@@ -40,6 +44,7 @@ public class OpeningQuestionController : MonoBehaviour
         EnsureEventSystem();
         EnsureCanvasRaycaster();
         ResolveVideoDisplay();
+        ResolveQuestionAudioSource();
         HideVideoDisplay();
     }
 
@@ -77,6 +82,20 @@ public class OpeningQuestionController : MonoBehaviour
         if (found != null)
         {
             videoDisplay = found;
+        }
+    }
+
+    private void ResolveQuestionAudioSource()
+    {
+        if (questionAudioSource != null)
+        {
+            return;
+        }
+
+        questionAudioSource = GetComponent<AudioSource>();
+        if (questionAudioSource == null)
+        {
+            questionAudioSource = gameObject.AddComponent<AudioSource>();
         }
     }
 
@@ -130,48 +149,49 @@ public class OpeningQuestionController : MonoBehaviour
         questions.Add(new QuestionData
         {
             questionId = "q1",
-            questionText = "question1？",
+            questionText = "你究竟是顺从逻辑的秩序，还是臣服于心绪的本能?",
             options = new[]
             {
-                new OptionData { optionId = "q1_a", optionText = "option1" },
-                new OptionData { optionId = "q1_b", optionText = "option2" },
-                new OptionData { optionId = "q1_c", optionText = "option3" }
+                new OptionData { optionId = "q1_a", optionText = "理性" },
+                new OptionData { optionId = "q1_b", optionText = "感性" }
+                
             }
         });
 
         questions.Add(new QuestionData
         {
             questionId = "q2",
-            questionText = "The Most Important Thing?",
+            questionText = "满目凡尘物象，哪一样是你心底不可舍弃的重量？",
             options = new[]
             {
-                new OptionData { optionId = "q2_a", optionText = "A. The life of the person you love most" },
-                new OptionData { optionId = "q2_b", optionText = "B. The freedom of all humanity" },
-                new OptionData { optionId = "q2_c", optionText = "C. The ideal you have upheld throughout your life" },
-                 new OptionData { optionId = "q2_d", optionText = "D. Fairness and justice in the human world" }
+                new OptionData { optionId = "q2_a", optionText = "A. 挚爱之人的生命" },
+                new OptionData { optionId = "q2_b", optionText = "B. 全人类的自由" },
+                new OptionData { optionId = "q2_c", optionText = "C. 坚持一生的理想" },
+                 new OptionData { optionId = "q2_d", optionText = "D. 人世间的公平与正义" }
             }
         });
 
         questions.Add(new QuestionData
         {
             questionId = "q3",
-            questionText = "As a judge, would you sentence the following two people to death?",
+            questionText = "倘若执掌生死审判，你是否会降下裁决，终结二人性命？",
             options = new[]
             {
-                new OptionData { optionId = "q3_a", optionText = "A. Do everything you can to make up for it." },
-                new OptionData { optionId = "q3_b", optionText = "B. Regret is a part of life. Let it go and move forward." }
-               
+              new OptionData { optionId = "q2_a", optionText = "A. 处死婴儿时期的希特勒" },
+                new OptionData { optionId = "q2_b", optionText = "B. 处死私下进行人体实验的顶尖科学家" },
+                new OptionData { optionId = "q2_c", optionText = "C. 都处死" },
+                 new OptionData { optionId = "q2_d", optionText = "D. 都不处死" }
             }
         });
 
         questions.Add(new QuestionData
         {
             questionId = "q4",
-            questionText = "Which attitude toward regret is closer to your own?",
+            questionText = "面对命中无从改写的遗憾，你会选择沉溺还是释怀？",
             options = new[]
             {
-                new OptionData { optionId = "q4_a", optionText = "A. Do everything you can to make up for it." },
-                new OptionData { optionId = "q4_b", optionText = "B. Regret is a part of life. Let it go and move forward." }
+                new OptionData { optionId = "q4_a", optionText = "A. 竭尽所能，尽力挽回。" },
+                new OptionData { optionId = "q4_b", optionText = "B. 遗憾是人生的一部分，放下遗憾，向前看。" }
             }
         });
     }
@@ -220,7 +240,7 @@ public class OpeningQuestionController : MonoBehaviour
             return;
         }
 
-        if (questionText == null || progressText == null || optionRoot == null || optionButtonPrefab == null)
+        if (progressText == null || optionRoot == null || optionButtonPrefab == null)
         {
             Debug.LogError("OpeningQuestionController: question UI is not fully assigned.");
             return;
@@ -230,21 +250,90 @@ public class OpeningQuestionController : MonoBehaviour
 
         currentQuestionIndex = index;
         QuestionData question = questions[index];
+        isChangingQuestion = true;
 
-        questionText.text = question.questionText;
+        if (questionText != null)
+        {
+            questionText.text = "";
+            questionText.gameObject.SetActive(false);
+        }
+
         progressText.text = (index + 1) + " / " + questions.Count;
-        questionText.ForceMeshUpdate();
         progressText.ForceMeshUpdate();
         Canvas.ForceUpdateCanvases();
 
         Debug.Log(
-            "OpeningQuestionController: UI updated. questionText=" + questionText.name +
-            ", progressText=" + progressText.name +
+            "OpeningQuestionController: UI updated. progressText=" + progressText.name +
             ", progress=" + progressText.text);
 
         if (loadingText != null)
         {
+            loadingText.gameObject.SetActive(true);
+            loadingText.text = "请听题...";
+        }
+
+        if (optionRoot != null)
+        {
+            optionRoot.gameObject.SetActive(false);
+        }
+
+        StartCoroutine(PlayQuestionAudioThenShowOptions(index));
+    }
+
+    private IEnumerator PlayQuestionAudioThenShowOptions(int index)
+    {
+        AudioClip clip = GetQuestionAudio(index);
+
+        if (questionAudioSource == null)
+        {
+            Debug.LogWarning("OpeningQuestionController: Question Audio Source is not assigned, options will show immediately.");
+            ShowOptionsForQuestion(index);
+            yield break;
+        }
+
+        if (clip == null)
+        {
+            Debug.LogWarning("OpeningQuestionController: question audio is empty for index " + index + ", options will show immediately.");
+            ShowOptionsForQuestion(index);
+            yield break;
+        }
+
+        questionAudioSource.Stop();
+        questionAudioSource.clip = clip;
+        questionAudioSource.Play();
+
+        yield return new WaitWhile(() => questionAudioSource != null && questionAudioSource.isPlaying);
+
+        ShowOptionsForQuestion(index);
+    }
+
+    private AudioClip GetQuestionAudio(int index)
+    {
+        if (questionAudios == null || index < 0 || index >= questionAudios.Length)
+        {
+            return null;
+        }
+
+        return questionAudios[index];
+    }
+
+    private void ShowOptionsForQuestion(int index)
+    {
+        if (index < 0 || index >= questions.Count)
+        {
+            return;
+        }
+
+        QuestionData question = questions[index];
+
+        if (loadingText != null)
+        {
             loadingText.gameObject.SetActive(false);
+        }
+
+        if (optionRoot != null)
+        {
+            optionRoot.gameObject.SetActive(true);
         }
 
         foreach (OptionData option in question.options)
@@ -270,6 +359,8 @@ public class OpeningQuestionController : MonoBehaviour
 
             Debug.Log("OpeningQuestionController: created option button " + optionId + " / " + optionTextValue);
         }
+
+        isChangingQuestion = false;
     }
 
     private void OnOptionClicked(string questionId, string questionTextValue, string optionId, string optionTextValue)
@@ -341,7 +432,6 @@ public class OpeningQuestionController : MonoBehaviour
 
         Debug.Log("OpeningQuestionController: show question " + (nextQuestionIndex + 1));
         ShowQuestion(nextQuestionIndex);
-        isChangingQuestion = false;
     }
 
     [ContextMenu("Debug/Force Next Question")]

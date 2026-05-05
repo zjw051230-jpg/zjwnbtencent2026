@@ -146,6 +146,41 @@ public class FMVDemoController : MonoBehaviour
         PlayNode(nodeId);
     }
 
+    public List<StoryNode> GetMenuNodes()
+    {
+        if (!EnsureStoryLoaded())
+        {
+            return new List<StoryNode>();
+        }
+
+        List<StoryNode> menuNodes = new List<StoryNode>();
+        foreach (StoryNode node in storyData.nodes)
+        {
+            if (node != null && node.showInMenu)
+            {
+                menuNodes.Add(node);
+            }
+        }
+
+        return menuNodes;
+    }
+
+    public void PauseCurrentVideo()
+    {
+        if (videoPlayer != null && videoPlayer.isPlaying)
+        {
+            videoPlayer.Pause();
+        }
+    }
+
+    public void ResumeCurrentVideo()
+    {
+        if (videoPlayer != null && !videoPlayer.isPlaying && currentNode != null && !choicesVisible)
+        {
+            videoPlayer.Play();
+        }
+    }
+
     public void PlayNode(string nodeId)
     {
         if (!EnsureStoryLoaded())
@@ -576,6 +611,8 @@ public class StoryNode
     public string eventType;
     public float choiceTime = -1f;
     public string defaultNext;
+    public bool showInMenu;
+    public string menuTitle;
     public ChoiceData[] choices;
 }
 

@@ -27,6 +27,8 @@
       "video": "main_scene_01.mp4",
       "choiceTime": 2,
       "defaultNext": "end_bad",
+      "showInMenu": true,
+      "menuTitle": "主剧情测试",
       "choices": [
         {
           "text": "To dialogue test",
@@ -62,6 +64,8 @@
       "eventType": "voiceDialogue",
       "choiceTime": -1,
       "defaultNext": "end_good",
+      "showInMenu": true,
+      "menuTitle": "语音对话测试",
       "choices": []
     },
     {

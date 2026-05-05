@@ -15,7 +15,7 @@ public class VoiceDialogueController : MonoBehaviour
 
     [Header("Role")]
     public string roleId = "investigator";
-    public string roleName = "调查者";
+    public string roleName = "Mozart";
     public string sceneId = "dialogue_scene";
     public string speakingVideoFileName = "role_speaking.mp4";
 
@@ -43,6 +43,7 @@ public class VoiceDialogueController : MonoBehaviour
     private void Awake()
     {
         ResolveDialoguePanel();
+        ResolveAudioSource();
 
         if (recordButton != null)
         {
@@ -60,7 +61,7 @@ public class VoiceDialogueController : MonoBehaviour
             dialoguePanel.SetActive(false);
         }
 
-        SetStatus("准备录音");
+        SetStatus("Ready to record");
     }
 
     private void ResolveDialoguePanel()
@@ -74,6 +75,20 @@ public class VoiceDialogueController : MonoBehaviour
         if (found != null)
         {
             dialoguePanel = found;
+        }
+    }
+
+    private void ResolveAudioSource()
+    {
+        if (aiAudioSource != null)
+        {
+            return;
+        }
+
+        aiAudioSource = GetComponent<AudioSource>();
+        if (aiAudioSource == null)
+        {
+            aiAudioSource = gameObject.AddComponent<AudioSource>();
         }
     }
 
@@ -104,7 +119,7 @@ public class VoiceDialogueController : MonoBehaviour
             replyText.text = "";
         }
 
-        SetStatus("准备录音");
+        SetStatus("Ready to record");
     }
 
     private void ActivateParents(Transform target)
@@ -158,13 +173,13 @@ public class VoiceDialogueController : MonoBehaviour
     public void StartRecording()
     {
 #if UNITY_WEBGL && !UNITY_EDITOR
-        SetStatus("WebGL 录音需要浏览器麦克风插件");
+        SetStatus("WebGL recording is not available in this demo");
         Debug.LogWarning("VoiceDialogueController: Unity WebGL Microphone is not supported by this controller.");
         return;
 #else
         if (Microphone.devices.Length == 0)
         {
-            SetStatus("没有检测到麦克风");
+            SetStatus("No microphone found");
             Debug.LogError("VoiceDialogueController: no microphone device found.");
             return;
         }
@@ -173,7 +188,7 @@ public class VoiceDialogueController : MonoBehaviour
         microphoneDevice = Microphone.devices[0];
         recordingClip = Microphone.Start(microphoneDevice, false, maxRecordSeconds, sampleRate);
         isRecording = true;
-        SetStatus("录音中，再次点击发送");
+        SetStatus("Recording, click again to send");
         Debug.Log("VoiceDialogueController: recording started with " + microphoneDevice);
 #endif
     }
@@ -195,7 +210,7 @@ public class VoiceDialogueController : MonoBehaviour
 
         if (samplePosition <= 0)
         {
-            SetStatus("录音为空，请重试");
+            SetStatus("Recording is empty, try again");
             Debug.LogWarning("VoiceDialogueController: empty recording.");
             return;
         }
@@ -210,7 +225,7 @@ public class VoiceDialogueController : MonoBehaviour
     private IEnumerator SendVoiceDialogue(byte[] wavBytes)
     {
         isSubmitting = true;
-        SetStatus("正在发送语音...");
+        SetStatus("Sending voice...");
 
         List<IMultipartFormSection> form = new List<IMultipartFormSection>
         {
@@ -226,7 +241,7 @@ public class VoiceDialogueController : MonoBehaviour
 
             if (request.result != UnityWebRequest.Result.Success)
             {
-                SetStatus("语音请求失败");
+                SetStatus("Voice request failed");
                 Debug.LogError("VoiceDialogueController: request failed: " + request.error);
                 isSubmitting = false;
                 yield break;
@@ -244,7 +259,7 @@ public class VoiceDialogueController : MonoBehaviour
     {
         if (response == null)
         {
-            SetStatus("响应解析失败");
+            SetStatus("Response parse failed");
             isSubmitting = false;
             return;
         }
@@ -256,7 +271,7 @@ public class VoiceDialogueController : MonoBehaviour
 
         if (transcriptText != null)
         {
-            transcriptText.text = response.transcript;
+            transcriptText.text = string.IsNullOrEmpty(response.transcript) ? "" : response.transcript;
             Debug.Log("VoiceDialogueController: transcript displayed: " + response.transcript);
         }
         else
@@ -266,7 +281,7 @@ public class VoiceDialogueController : MonoBehaviour
 
         if (replyText != null)
         {
-            replyText.text = response.replyText;
+            replyText.text = string.IsNullOrEmpty(response.replyText) ? "(No reply text)" : response.replyText;
             Debug.Log("VoiceDialogueController: reply displayed: " + response.replyText);
         }
         else
@@ -274,13 +289,13 @@ public class VoiceDialogueController : MonoBehaviour
             Debug.LogWarning("VoiceDialogueController: Reply Text is not assigned.");
         }
 
-        SetStatus("角色回复中");
+        SetStatus("Character replied");
         StartCoroutine(PlayReply(response));
     }
 
     private IEnumerator PlayReply(VoiceDialogueResponse response)
     {
-        PlaySpeakingVideo();
+        PlaySpeakingVideo(response.speakingVideoNodeId);
 
         if (!string.IsNullOrEmpty(response.audioUrl))
         {
@@ -306,15 +321,26 @@ public class VoiceDialogueController : MonoBehaviour
         }
 
         isSubmitting = false;
-        SetStatus("准备录音");
+        SetStatus("Ready to record");
     }
 
-    private void PlaySpeakingVideo()
+    private void PlaySpeakingVideo(string speakingVideoNodeId)
     {
         if (speakingVideoPlayer == null)
         {
             return;
         }
+
+        string fileName = string.IsNullOrEmpty(speakingVideoNodeId) ? speakingVideoFileName : speakingVideoNodeId + ".mp4";
+
+#if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
+        string localPath = Path.Combine(Application.streamingAssetsPath, "Videos", fileName);
+        if (!File.Exists(localPath))
+        {
+            Debug.LogWarning("VoiceDialogueController: speaking video missing, reply text will still be shown. path=" + localPath);
+            return;
+        }
+#endif
 
         if (speakingVideoDisplay != null)
         {
@@ -323,7 +349,7 @@ public class VoiceDialogueController : MonoBehaviour
 
         speakingVideoPlayer.Stop();
         speakingVideoPlayer.source = VideoSource.Url;
-        speakingVideoPlayer.url = BuildVideoUrl(speakingVideoFileName);
+        speakingVideoPlayer.url = BuildVideoUrl(fileName);
         speakingVideoPlayer.isLooping = true;
         speakingVideoPlayer.Play();
 
