@@ -1856,7 +1856,7 @@ MonoBehaviour:
   speakingVideoFileName: role_speaking.mp4
   sampleRate: 16000
   maxRecordSeconds: 15
-  dialoguePanel: {fileID: 0}
+  dialoguePanel: {fileID: 6290908}
   recordButton: {fileID: 1954232997}
   statusText: {fileID: 1469773399}
   transcriptText: {fileID: 241127915}
@@ -2053,7 +2053,7 @@ MonoBehaviour:
   roleApiUrl: http://localhost:3000/api/assign-role
   fmvController: {fileID: 1321253497}
   enterGameDelay: 1.5
-  videoDisplay: {fileID: 0}
+  videoDisplay: {fileID: 1260961101}
 --- !u!4 &1489547528
 Transform:
   m_ObjectHideFlags: 0
