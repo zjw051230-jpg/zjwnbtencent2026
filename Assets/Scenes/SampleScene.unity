@@ -1867,6 +1867,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 903192e91711e7f4aba78ab6ff8d0c86, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  apiBaseUrl: http://localhost:3000
   voiceDialogueApiUrl: http://localhost:3000/api/voice-dialogue
   roleId: investigator
   roleName: "\u8C03\u67E5\u8005"
@@ -2071,12 +2072,13 @@ MonoBehaviour:
   optionButtonPrefab: {fileID: 7427279657017652504, guid: eb160256b5193b04bb857609a6cd8ce2, type: 3}
   blackScreenPanel: {fileID: 0}
   questionAudioSource: {fileID: 1489547529}
-  openingAudioClip: {fileID: 0}
+  openingAudioClip: {fileID: 8300000, guid: 221a290d1e0917846ab27061e746cd4e, type: 3}
   questionAudios:
   - {fileID: 8300000, guid: c2643793f98582940bb5be26404ef0fe, type: 3}
   - {fileID: 8300000, guid: 66f6f59c690f2be48a6fe1de6e71cb2c, type: 3}
   - {fileID: 8300000, guid: e55efd658236ed34d8c74b4a2879c1c7, type: 3}
   - {fileID: 8300000, guid: 71051f5c46ac30d45b5373cd8d13b414, type: 3}
+  apiBaseUrl: http://localhost:3000
   roleApiUrl: http://localhost:3000/api/assign-role
   fmvController: {fileID: 1321253497}
   enterGameDelay: 1.5

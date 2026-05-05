@@ -11,6 +11,7 @@ using UnityEngine.Video;
 public class VoiceDialogueController : MonoBehaviour
 {
     [Header("API")]
+    public string apiBaseUrl = "http://localhost:3000";
     public string voiceDialogueApiUrl = "http://localhost:3000/api/voice-dialogue";
 
     [Header("Role")]
@@ -235,13 +236,16 @@ public class VoiceDialogueController : MonoBehaviour
             new MultipartFormDataSection("sceneId", sceneId)
         };
 
-        using (UnityWebRequest request = UnityWebRequest.Post(voiceDialogueApiUrl, form))
+        string voiceDialogueUrl = BuildApiUrl("/api/voice-dialogue", voiceDialogueApiUrl);
+        Debug.Log("VoiceDialogueController: voice-dialogue url=" + voiceDialogueUrl);
+
+        using (UnityWebRequest request = UnityWebRequest.Post(voiceDialogueUrl, form))
         {
             yield return request.SendWebRequest();
 
             if (request.result != UnityWebRequest.Result.Success)
             {
-                SetStatus("Voice request failed");
+                SetStatus("语音发送失败，请重试");
                 Debug.LogError("VoiceDialogueController: request failed: " + request.error);
                 isSubmitting = false;
                 yield break;
@@ -396,6 +400,18 @@ public class VoiceDialogueController : MonoBehaviour
 #else
         return Path.Combine(Application.streamingAssetsPath, "Videos", videoFileName);
 #endif
+    }
+
+    private string BuildApiUrl(string path, string legacyUrl)
+    {
+        string baseUrl = string.IsNullOrWhiteSpace(apiBaseUrl) ? "" : apiBaseUrl.Trim().TrimEnd('/');
+        if (!string.IsNullOrEmpty(baseUrl))
+        {
+            string normalizedPath = path.StartsWith("/") ? path : "/" + path;
+            return baseUrl + normalizedPath;
+        }
+
+        return legacyUrl;
     }
 
     private void SetStatus(string value)

@@ -27,6 +27,7 @@ public class OpeningQuestionController : MonoBehaviour
     public AudioClip[] questionAudios;
 
     [Header("API")]
+    public string apiBaseUrl = "http://localhost:3000";
     public string roleApiUrl = "http://localhost:3000/api/assign-role";
 
     [Header("Game")]
@@ -590,7 +591,10 @@ public class OpeningQuestionController : MonoBehaviour
         string json = JsonUtility.ToJson(requestData);
         byte[] bodyRaw = Encoding.UTF8.GetBytes(json);
 
-        using (UnityWebRequest request = new UnityWebRequest(roleApiUrl, UnityWebRequest.kHttpVerbPOST))
+        string assignRoleUrl = BuildApiUrl("/api/assign-role", roleApiUrl);
+        Debug.Log("OpeningQuestionController: assign-role url=" + assignRoleUrl);
+
+        using (UnityWebRequest request = new UnityWebRequest(assignRoleUrl, UnityWebRequest.kHttpVerbPOST))
         {
             request.uploadHandler = new UploadHandlerRaw(bodyRaw);
             request.downloadHandler = new DownloadHandlerBuffer();
@@ -605,7 +609,7 @@ public class OpeningQuestionController : MonoBehaviour
 
                 if (loadingText != null)
                 {
-                    loadingText.text = "Error,please try again";
+                    loadingText.text = "连接后端失败，请稍后重试";
                 }
 
                 isSubmitting = false;
@@ -682,6 +686,18 @@ public class OpeningQuestionController : MonoBehaviour
         {
             unityText.text = label;
         }
+    }
+
+    private string BuildApiUrl(string path, string legacyUrl)
+    {
+        string baseUrl = string.IsNullOrWhiteSpace(apiBaseUrl) ? "" : apiBaseUrl.Trim().TrimEnd('/');
+        if (!string.IsNullOrEmpty(baseUrl))
+        {
+            string normalizedPath = path.StartsWith("/") ? path : "/" + path;
+            return baseUrl + normalizedPath;
+        }
+
+        return legacyUrl;
     }
 
     private void HideQuestionHeader()
