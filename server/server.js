@@ -90,19 +90,16 @@ app.use(express.json({ limit: "256kb" }));
 app.use("/generated-audio", express.static(generatedAudioDir));
 
 app.get("/health", (req, res) => {
-  const doubaoAutoEnabled = isDoubaoAutoEnabled();
-  const doubaoRealtimeEffectiveEnabled = isDoubaoRealtimeEffectiveEnabled();
-
   res.json({
     ok: true,
     service: "fmv-demo-server",
     arkConfigured: Boolean(arkApiKey),
     openaiConfigured: Boolean(openai),
     demoVoiceMock,
-    doubaoRealtimeEnabled: doubaoRealtimeEffectiveEnabled,
+    doubaoRealtimeEnabled: isDoubaoRealtimeEnabled(),
     doubaoConfigured: isDoubaoConfigured(),
     doubaoRuntimeConfigured: isDoubaoRuntimeConfigured(),
-    doubaoAutoEnabled
+    doubaoAutoEnabled: isDoubaoAutoEnabled()
   });
 });
 
@@ -155,11 +152,12 @@ app.post("/api/voice-dialogue", upload.single("audio"), async (req, res) => {
     const roleId = toStringValue(req.body.roleId) || DEFAULT_ROLE.roleId;
     const roleName = toStringValue(req.body.roleName) || DEFAULT_ROLE.roleName;
     const sceneId = toStringValue(req.body.sceneId) || "dialogue_scene";
+
     const doubaoAutoEnabled = isDoubaoAutoEnabled();
-    const shouldUseDoubaoRealtime = isDoubaoRealtimeEffectiveEnabled();
+    const doubaoRealtimeEnabled = isDoubaoRealtimeEnabled();
 
     console.log(
-      `[voice-dialogue] roleId=${roleId}, sceneId=${sceneId}, file=${uploadedFile.originalname}, size=${uploadedFile.size}, useDoubaoRealtime=${useDoubaoRealtime}, doubaoAutoEnabled=${doubaoAutoEnabled}, demoVoiceMock=${demoVoiceMock}`
+      `[voice-dialogue] roleId=${roleId}, sceneId=${sceneId}, file=${uploadedFile.originalname}, size=${uploadedFile.size}, useDoubaoRealtime=${useDoubaoRealtime}, doubaoAutoEnabled=${doubaoAutoEnabled}, doubaoRealtimeEnabled=${doubaoRealtimeEnabled}, demoVoiceMock=${demoVoiceMock}`
     );
 
     if (demoVoiceMock) {
@@ -170,7 +168,7 @@ app.post("/api/voice-dialogue", upload.single("audio"), async (req, res) => {
 
     let result;
 
-    if (shouldUseDoubaoRealtime) {
+    if (doubaoRealtimeEnabled) {
       try {
         const doubaoResult = await createDoubaoVoiceDialogue({
           audioPath: uploadedFile.path,
@@ -207,11 +205,7 @@ app.post("/api/voice-dialogue", upload.single("audio"), async (req, res) => {
       });
     }
 
-    const responseBody = ensureVoiceDialogueResponse(result);
-    console.log(
-      `[voice-dialogue] returning source=${toStringValue(responseBody.source) || "unknown"} transcriptLength=${responseBody.transcript.length} replyTextLength=${responseBody.replyText.length}`
-    );
-    res.json(responseBody);
+    res.json(ensureVoiceDialogueResponse(result));
   } catch (error) {
     console.error("[voice-dialogue] failed:", getErrorMessage(error));
     res.json(createDefaultDialogueResponse(getErrorMessage(error)));
@@ -591,8 +585,12 @@ function readDoubaoRuntimeState() {
   };
 }
 
+function isDoubaoEnvConfigured() {
+  return Boolean(normalizeEnvValue(process.env.DOUBAO_REALTIME_ACCESS_KEY));
+}
+
 function isDoubaoConfigured() {
-  return Boolean(normalizeEnvValue(process.env.DOUBAO_REALTIME_APP_ID));
+  return isDoubaoRuntimeConfigured() || isDoubaoEnvConfigured();
 }
 
 function isDoubaoRuntimeConfigured() {
@@ -600,11 +598,15 @@ function isDoubaoRuntimeConfigured() {
 }
 
 function isDoubaoAutoEnabled() {
-  return !demoVoiceMock && isDoubaoRuntimeConfigured();
+  return isDoubaoRuntimeConfigured() || isDoubaoEnvConfigured();
 }
 
-function isDoubaoRealtimeEffectiveEnabled() {
-  return !demoVoiceMock && (useDoubaoRealtime || isDoubaoRuntimeConfigured());
+function isDoubaoRealtimeEnabled() {
+  if (demoVoiceMock) {
+    return false;
+  }
+
+  return useDoubaoRealtime || isDoubaoAutoEnabled();
 }
 
 function normalizeAccessKey(value) {

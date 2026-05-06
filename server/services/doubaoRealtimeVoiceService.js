@@ -18,8 +18,11 @@ const SESSION_TIMEOUT_MS = 60000;
 const CONNECTION_STARTED_TIMEOUT_MS = 8000;
 const SESSION_STARTED_TIMEOUT_MS = 10000;
 const ASR_CHAT_TIMEOUT_MS = 60000;
-const TEXT_READY_RETURN_DELAY_MS = 1500;
 const DOUBAO_QPM_COOLDOWN_MS = 60000;
+const TTS_FINALIZATION_WAIT_MS = 2000;
+const TTS_SAMPLE_RATE = 24000;
+const TTS_CHANNELS = 1;
+const TTS_BITS_PER_SAMPLE = 16;
 
 let doubaoCooldownUntil = 0;
 
@@ -144,9 +147,6 @@ async function runDoubaoRealtimeSession({
   publicBaseUrl,
   config
 }) {
-  void outputDir;
-  void publicBaseUrl;
-
   const wav = await readWavPcm16(audioPath);
   const connectId = crypto.randomUUID();
   const sessionId = crypto.randomUUID();
@@ -186,7 +186,10 @@ async function runDoubaoRealtimeSession({
     let finishSessionSent = false;
     let transportError = "";
     let waitStage = "connection_started";
-    let textReadyReturnTimerId = null;
+    let ttsChunkCount = 0;
+    let ttsAudioBytes = 0;
+    let successFinalizing = false;
+    let successFinalizeTimerId = null;
     const ttsChunks = [];
     const eventWaiters = new Map();
 
@@ -375,8 +378,7 @@ async function runDoubaoRealtimeSession({
             transcript = finalTranscript;
           }
           if (transcript) {
-            console.log(`[doubao] transcript final length=${transcript.length}`);
-            maybeScheduleTextReadyReturn();
+            console.log(`[doubao] transcript=${transcript}`);
           }
           return;
         }
@@ -391,8 +393,7 @@ async function runDoubaoRealtimeSession({
           const text = extractReplyText(frame.payload);
           if (text) {
             replyText = appendSegment(replyText, text);
-            console.log(`[doubao] replyText final length=${replyText.length}`);
-            maybeScheduleTextReadyReturn();
+            console.log(`[doubao] replyText=${replyText}`);
           }
           return;
         }
@@ -408,14 +409,15 @@ async function runDoubaoRealtimeSession({
         if (frame.eventName === "ChatEnded") {
           chatEnded = true;
           maybeSendFinishSession();
-          console.log("[doubao] ChatEnded received, returning doubao result to Unity");
-          finish(buildDialogueSuccess({ transcript: finalTranscript || transcript, replyText: replyText || fallbackReplyText, ttsChunks }));
+          scheduleSuccessFinalize();
           return;
         }
 
         if (frame.eventName === "TTSResponse") {
           if (frame.audio && frame.audio.length > 0) {
             ttsChunks.push(frame.audio);
+            ttsChunkCount += 1;
+            ttsAudioBytes += frame.audio.length;
           }
           return;
         }
@@ -423,8 +425,7 @@ async function runDoubaoRealtimeSession({
         if (frame.eventName === "TTSEnded") {
           ttsEnded = true;
           maybeSendFinishSession();
-          console.log("[doubao] TTSEnded received, returning doubao result to Unity");
-          finish(buildDialogueSuccess({ transcript: finalTranscript || transcript, replyText: replyText || fallbackReplyText, ttsChunks }));
+          scheduleSuccessFinalize(true);
           return;
         }
 
@@ -479,7 +480,7 @@ async function runDoubaoRealtimeSession({
       const resolvedReplyText = replyText || fallbackReplyText;
 
       if (resolvedTranscript || resolvedReplyText) {
-        finish(buildDialogueSuccess({ transcript: resolvedTranscript, replyText: resolvedReplyText, ttsChunks }));
+        scheduleSuccessFinalize(true);
         return;
       }
 
@@ -493,7 +494,7 @@ async function runDoubaoRealtimeSession({
 
       settled = true;
       clearTimeout(timeoutId);
-      clearTextReadyReturnTimer();
+      clearTimeout(successFinalizeTimerId);
       rejectPendingEventWaiters(transportError || getStageTimeoutError(waitStage) || "DOUBAO_REALTIME_CLOSED");
 
       try {
@@ -505,46 +506,6 @@ async function runDoubaoRealtimeSession({
       }
 
       resolve(result);
-    }
-
-    function maybeScheduleTextReadyReturn() {
-      if (settled || textReadyReturnTimerId) {
-        return;
-      }
-
-      const resolvedTranscript = finalTranscript || transcript;
-      const resolvedReplyText = replyText || fallbackReplyText;
-      if (!resolvedTranscript || !resolvedReplyText) {
-        return;
-      }
-
-      console.log(
-        `[doubao] text ready, scheduling return to Unity in ${TEXT_READY_RETURN_DELAY_MS}ms transcriptLength=${resolvedTranscript.length} replyTextLength=${resolvedReplyText.length}`
-      );
-
-      textReadyReturnTimerId = setTimeout(() => {
-        textReadyReturnTimerId = null;
-        const latestTranscript = finalTranscript || transcript;
-        const latestReplyText = replyText || fallbackReplyText;
-        if (latestTranscript && latestReplyText) {
-          console.log(
-            `[doubao] returning doubao result to Unity transcriptLength=${latestTranscript.length} replyTextLength=${latestReplyText.length}`
-          );
-          finish(buildDialogueSuccess({ transcript: latestTranscript, replyText: latestReplyText, ttsChunks }));
-          return;
-        }
-
-        console.warn("[doubao] text ready timer fired but transcript or replyText became empty");
-      }, TEXT_READY_RETURN_DELAY_MS);
-    }
-
-    function clearTextReadyReturnTimer() {
-      if (!textReadyReturnTimerId) {
-        return;
-      }
-
-      clearTimeout(textReadyReturnTimerId);
-      textReadyReturnTimerId = null;
     }
 
     function maybeSendFinishSession() {
@@ -569,6 +530,55 @@ async function runDoubaoRealtimeSession({
       ).catch((error) => {
         transportError = getErrorMessage(error);
       });
+    }
+
+    function scheduleSuccessFinalize(forceImmediate = false) {
+      if (settled || successFinalizing) {
+        return;
+      }
+
+      if (!chatEnded && !forceImmediate) {
+        return;
+      }
+
+      clearTimeout(successFinalizeTimerId);
+
+      if (forceImmediate || ttsEnded) {
+        finalizeSuccess();
+        return;
+      }
+
+      successFinalizeTimerId = setTimeout(() => {
+        finalizeSuccess();
+      }, TTS_FINALIZATION_WAIT_MS);
+    }
+
+    async function finalizeSuccess() {
+      if (settled || successFinalizing) {
+        return;
+      }
+
+      successFinalizing = true;
+      const resolvedTranscript = finalTranscript || transcript;
+      const resolvedReplyText = replyText || fallbackReplyText;
+
+      try {
+        const result = await buildDialogueSuccess({
+          transcript: resolvedTranscript,
+          replyText: resolvedReplyText,
+          ttsChunks,
+          outputDir,
+          publicBaseUrl,
+          sessionId,
+          ttsChunkCount,
+          ttsAudioBytes
+        });
+        finish(result);
+      } catch (error) {
+        successFinalizing = false;
+        transportError = getErrorMessage(error);
+        finish({ ok: false, error: transportError });
+      }
     }
 
     function waitForServerEvent({ successEventId, failureEventIds = [], timeoutMs, timeoutError }) {
@@ -1112,9 +1122,7 @@ function buildFrame({
   return frame;
 }
 
-function buildDialogueSuccess({ transcript, replyText, ttsChunks }) {
-  void ttsChunks;
-
+async function buildDialogueSuccess({ transcript, replyText, ttsChunks, outputDir, publicBaseUrl, sessionId, ttsChunkCount, ttsAudioBytes }) {
   const normalizedTranscript = toStringValue(transcript);
   const normalizedReplyText = toStringValue(replyText);
 
@@ -1125,31 +1133,54 @@ function buildDialogueSuccess({ transcript, replyText, ttsChunks }) {
     };
   }
 
-  if (normalizedTranscript && normalizedReplyText) {
+  const effectiveReplyText = normalizedReplyText || (normalizedTranscript ? "我听到了。先别急，我们先把线索理清。" : "");
+  const replyFallbackUsed = !normalizedReplyText && Boolean(normalizedTranscript);
+
+  if (!effectiveReplyText) {
     return {
-      ok: true,
-      transcript: normalizedTranscript,
-      replyText: normalizedReplyText,
-      audioUrl: "",
-      source: "doubao",
-      error: ""
+      ok: false,
+      error: "DOUBAO_REALTIME_REPLY_EMPTY"
     };
   }
 
-  if (normalizedTranscript) {
+  console.log(`[doubao] tts audio chunks=${ttsChunkCount || 0} bytes=${ttsAudioBytes || 0}`);
+
+  let audioUrl = "";
+  if (Array.isArray(ttsChunks) && ttsChunks.length > 0 && outputDir && publicBaseUrl) {
+    const savedAudio = await saveDoubaoTtsWav({ outputDir, publicBaseUrl, sessionId, ttsChunks });
+    audioUrl = savedAudio.audioUrl;
+    console.log(`[doubao] tts wav saved path=${savedAudio.filePath} bytes=${savedAudio.bytes}`);
+  }
+
+  if (replyFallbackUsed) {
     return {
       ok: true,
       transcript: normalizedTranscript,
-      replyText: "我听到了。先别急，我们先把线索理清。",
-      audioUrl: "",
-      source: "doubao_partial",
+      replyText: effectiveReplyText,
+      audioUrl,
+      source: audioUrl ? "doubao_partial" : "doubao_partial",
       error: "DOUBAO_REPLY_FALLBACK"
     };
   }
 
+  if (!audioUrl) {
+    return {
+      ok: true,
+      transcript: normalizedTranscript,
+      replyText: effectiveReplyText,
+      audioUrl: "",
+      source: "doubao_partial",
+      error: "TTS_NOT_AVAILABLE"
+    };
+  }
+
   return {
-    ok: false,
-    error: "DOUBAO_REALTIME_REPLY_EMPTY"
+    ok: true,
+    transcript: normalizedTranscript,
+    replyText: effectiveReplyText,
+    audioUrl,
+    source: "doubao",
+    error: ""
   };
 }
 
@@ -1376,6 +1407,65 @@ function maybeDecompressPayload(payloadBuffer, compression) {
 function gzipJson(value) {
   const jsonBuffer = Buffer.from(JSON.stringify(value), "utf8");
   return zlib.gzipSync(jsonBuffer);
+}
+
+async function saveDoubaoTtsWav({ outputDir, publicBaseUrl, sessionId, ttsChunks }) {
+  const pcmBuffer = Buffer.concat(ttsChunks);
+  if (pcmBuffer.length === 0) {
+    throw new Error("DOUBAO_TTS_AUDIO_EMPTY");
+  }
+
+  await fs.promises.mkdir(outputDir, { recursive: true });
+  const fileName = buildDoubaoTtsFileName(sessionId);
+  const outputPath = path.join(outputDir, fileName);
+  await writePcm16WavFile(outputPath, pcmBuffer, TTS_SAMPLE_RATE, TTS_CHANNELS);
+
+  return {
+    fileName,
+    filePath: outputPath,
+    audioUrl: buildGeneratedAudioUrl(publicBaseUrl, fileName),
+    bytes: pcmBuffer.length
+  };
+}
+
+async function writePcm16WavFile(outputPath, pcmBuffer, sampleRate = TTS_SAMPLE_RATE, channels = TTS_CHANNELS) {
+  const normalizedPcmBuffer = Buffer.isBuffer(pcmBuffer) ? pcmBuffer : Buffer.from(pcmBuffer || []);
+  const bitsPerSample = TTS_BITS_PER_SAMPLE;
+  const byteRate = sampleRate * channels * (bitsPerSample / 8);
+  const blockAlign = channels * (bitsPerSample / 8);
+  const dataSize = normalizedPcmBuffer.length;
+  const header = Buffer.alloc(44);
+
+  header.write("RIFF", 0, "ascii");
+  header.writeUInt32LE(36 + dataSize, 4);
+  header.write("WAVE", 8, "ascii");
+  header.write("fmt ", 12, "ascii");
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write("data", 36, "ascii");
+  header.writeUInt32LE(dataSize, 40);
+
+  const wavBuffer = Buffer.concat([header, normalizedPcmBuffer]);
+  if (wavBuffer.length <= 44) {
+    throw new Error("DOUBAO_TTS_WAV_INVALID");
+  }
+
+  await fs.promises.writeFile(outputPath, wavBuffer);
+}
+
+function buildDoubaoTtsFileName(sessionId) {
+  const normalizedSessionId = toStringValue(sessionId).replace(/[^a-zA-Z0-9-_]/g, "");
+  const suffix = normalizedSessionId || crypto.randomUUID();
+  return `doubao-tts-${suffix}.wav`;
+}
+
+function buildGeneratedAudioUrl(publicBaseUrl, fileName) {
+  return `${toStringValue(publicBaseUrl).replace(/\/$/, "")}/generated-audio/${fileName}`;
 }
 
 function splitBuffer(buffer, chunkSize) {
