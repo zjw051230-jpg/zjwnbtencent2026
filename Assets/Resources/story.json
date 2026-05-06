@@ -42,12 +42,42 @@
       "video": "dialogue_Mozart.mp4",
       "eventType": "voiceDialogue",
       "choiceTime": -1,
-      "defaultNext": "",
+      "defaultNext": "mozart_main3",
       "showInMenu": true,
       "menuTitle": "\u8df3\u5230\u83ab\u624e\u7279\u5bf9\u8bdd\u573a\u666f",
       "choices": []
     },
-
+    {
+      "id": "mozart_main3",
+      "video": "mozart_main3.mp4",
+      "choiceTime": -1,
+      "defaultNext": "mozart_main4",
+      "showInMenu": false,
+      "menuTitle": "\u83ab\u624e\u7279\u4e3b\u7ebf\u524d\u8282\u70b9",
+      "choices": []
+    },
+    {
+      "id": "mozart_main4",
+      "video": "mozart_main4.mp4",
+      "choiceTime": -1,
+      "defaultNext": "",
+      "interactionType": "clickToNext",
+      "clickHintText": "\u8bf7\u70b9\u51fb\u5e3d\u5b50",
+      "clickNextNodeId": "mozart_main5",
+      "loopUntilClick": true,
+      "showInMenu": false,
+      "menuTitle": "\u83ab\u624e\u7279\u4e3b\u7ebf\u524d\u8282\u70b9",
+      "choices": []
+    },
+    {
+      "id": "mozart_main5",
+      "video": "mozart_main5.mp4",
+      "choiceTime": -1,
+      "defaultNext": "",
+      "showInMenu": false,
+      "menuTitle": "\u83ab\u624e\u7279\u4e3b\u7ebf\u524d\u8282\u70b9",
+      "choices": []
+    },
     {
       "id": "intro_Einstein",
       "video": "intro_Einstein.mp4",
