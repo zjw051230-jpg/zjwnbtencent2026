@@ -96,9 +96,10 @@ app.get("/health", (req, res) => {
     arkConfigured: Boolean(arkApiKey),
     openaiConfigured: Boolean(openai),
     demoVoiceMock,
-    doubaoRealtimeEnabled: useDoubaoRealtime,
+    doubaoRealtimeEnabled: isDoubaoRealtimeEnabled(),
     doubaoConfigured: isDoubaoConfigured(),
-    doubaoRuntimeConfigured: isDoubaoRuntimeConfigured()
+    doubaoRuntimeConfigured: isDoubaoRuntimeConfigured(),
+    doubaoAutoEnabled: isDoubaoAutoEnabled()
   });
 });
 
@@ -152,8 +153,11 @@ app.post("/api/voice-dialogue", upload.single("audio"), async (req, res) => {
     const roleName = toStringValue(req.body.roleName) || DEFAULT_ROLE.roleName;
     const sceneId = toStringValue(req.body.sceneId) || "dialogue_scene";
 
+    const doubaoAutoEnabled = isDoubaoAutoEnabled();
+    const doubaoRealtimeEnabled = isDoubaoRealtimeEnabled();
+
     console.log(
-      `[voice-dialogue] roleId=${roleId}, sceneId=${sceneId}, file=${uploadedFile.originalname}, size=${uploadedFile.size}, useDoubaoRealtime=${useDoubaoRealtime}, demoVoiceMock=${demoVoiceMock}`
+      `[voice-dialogue] roleId=${roleId}, sceneId=${sceneId}, file=${uploadedFile.originalname}, size=${uploadedFile.size}, useDoubaoRealtime=${useDoubaoRealtime}, doubaoAutoEnabled=${doubaoAutoEnabled}, doubaoRealtimeEnabled=${doubaoRealtimeEnabled}, demoVoiceMock=${demoVoiceMock}`
     );
 
     if (demoVoiceMock) {
@@ -164,7 +168,7 @@ app.post("/api/voice-dialogue", upload.single("audio"), async (req, res) => {
 
     let result;
 
-    if (useDoubaoRealtime) {
+    if (doubaoRealtimeEnabled) {
       try {
         const doubaoResult = await createDoubaoVoiceDialogue({
           audioPath: uploadedFile.path,
@@ -581,12 +585,28 @@ function readDoubaoRuntimeState() {
   };
 }
 
+function isDoubaoEnvConfigured() {
+  return Boolean(normalizeEnvValue(process.env.DOUBAO_REALTIME_ACCESS_KEY));
+}
+
 function isDoubaoConfigured() {
-  return Boolean(normalizeEnvValue(process.env.DOUBAO_REALTIME_APP_ID));
+  return isDoubaoRuntimeConfigured() || isDoubaoEnvConfigured();
 }
 
 function isDoubaoRuntimeConfigured() {
   return Boolean(normalizeAccessKey(doubaoRuntimeState.accessKey));
+}
+
+function isDoubaoAutoEnabled() {
+  return isDoubaoRuntimeConfigured() || isDoubaoEnvConfigured();
+}
+
+function isDoubaoRealtimeEnabled() {
+  if (demoVoiceMock) {
+    return false;
+  }
+
+  return useDoubaoRealtime || isDoubaoAutoEnabled();
 }
 
 function normalizeAccessKey(value) {
