@@ -40,6 +40,8 @@ public class FMVDemoController : MonoBehaviour
     private bool previewPlayback;
     private bool isMenuPaused;
     private bool wasVideoPausedForMenu;
+    private bool hasHandledVideoEnd;
+    private bool isTransitioning;
     private TMP_FontAsset cachedChineseFont;
 
     public bool IsMenuPaused => isMenuPaused;
@@ -166,6 +168,16 @@ public class FMVDemoController : MonoBehaviour
 
     public void PlayNodeFromOutside(string nodeId)
     {
+        if (!string.IsNullOrEmpty(nodeId)
+            && currentNode != null
+            && string.Equals(currentNode.id, nodeId, StringComparison.Ordinal)
+            && videoPlayer != null
+            && videoPlayer.isPlaying)
+        {
+            Debug.Log("FMVDemoController: ignore duplicate external PlayNode request for " + nodeId);
+            return;
+        }
+
         HideChoiceUIForExternalJump();
         if (voiceDialogueController != null)
         {
@@ -294,9 +306,11 @@ public class FMVDemoController : MonoBehaviour
 
         ClearChoices();
 
+        isTransitioning = true;
         currentNode = node;
         choicesVisible = false;
         currentVideoStarted = false;
+        hasHandledVideoEnd = false;
         previewPlayback = previewOnly;
         HideClickHint();
 
@@ -541,6 +555,13 @@ public class FMVDemoController : MonoBehaviour
             return;
         }
 
+        if (hasHandledVideoEnd || isTransitioning)
+        {
+            Debug.Log("FMVDemoController: duplicate video finished ignored for node " + currentNode.id);
+            return;
+        }
+
+        hasHandledVideoEnd = true;
         Debug.Log("FMVDemoController: video finished for node " + currentNode.id);
 
         if (previewPlayback)
@@ -568,6 +589,7 @@ public class FMVDemoController : MonoBehaviour
         Debug.Log("FMVDemoController: video prepared, play " + player.url);
         player.Play();
         currentVideoStarted = true;
+        isTransitioning = false;
     }
 
     private void SetButtonLabel(Button button, string label)
@@ -588,6 +610,7 @@ public class FMVDemoController : MonoBehaviour
 
     private void OnVideoError(VideoPlayer player, string message)
     {
+        isTransitioning = false;
         Debug.LogError("FMVDemoController: video error: " + message + " url=" + player.url);
     }
 

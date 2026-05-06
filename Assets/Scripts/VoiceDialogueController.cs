@@ -11,6 +11,16 @@ using UnityEngine.Video;
 public class VoiceDialogueController : MonoBehaviour
 {
     private const float DefaultDialogueVideoAspectRatio = 1112f / 834f;
+    private const string StatusReady = "\u70b9\u51fb\u6309\u94ae\u5f00\u59cb\u8bf4\u8bdd";
+    private const string StatusRecording = "\u6b63\u5728\u5f55\u97f3\uff0c\u518d\u6b21\u70b9\u51fb\u7ed3\u675f";
+    private const string StatusUploading = "\u6b63\u5728\u4e0a\u4f20\u8bed\u97f3...";
+    private const string StatusWaitingAi = "\u6b63\u5728\u7b49\u5f85 AI \u56de\u590d...";
+    private const string StatusPlayingAi = "\u6b63\u5728\u64ad\u653e AI \u56de\u590d...";
+    private const string StatusDialogueDone = "\u5bf9\u8bdd\u5b8c\u6210";
+    private const string StatusVoiceSendFailed = "\u8bed\u97f3\u53d1\u9001\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5";
+    private const string StatusFallback = "\u672a\u68c0\u6d4b\u5230\u6709\u6548\u8bed\u97f3\uff0c\u64ad\u653e\u9884\u8bbe\u56de\u5e94";
+    private const string StatusAudioPlaybackFailed = "\u8bed\u97f3\u97f3\u9891\u64ad\u653e\u5931\u8d25\uff0c\u4f46\u6587\u672c\u56de\u590d\u5df2\u6536\u5230";
+    private const string StatusFallbackVideoMissing = "\u515c\u5e95\u89c6\u9891\u7f3a\u5931\uff0c\u8bf7\u68c0\u67e5\u8d44\u6e90";
 
     [System.Serializable]
     public class RoleFallbackVideoData
@@ -93,7 +103,7 @@ public class VoiceDialogueController : MonoBehaviour
             dialoguePanel.SetActive(false);
         }
 
-        SetStatus("点击按钮开始说话");
+        SetStatus(StatusReady);
     }
 
     private void OnDestroy()
@@ -218,7 +228,7 @@ public class VoiceDialogueController : MonoBehaviour
             replyText.text = "";
         }
 
-        SetStatus("点击按钮开始说话");
+        SetStatus(StatusReady);
         PlayDialogueVideo(dialogueVideoFileName);
     }
 
@@ -561,7 +571,7 @@ public class VoiceDialogueController : MonoBehaviour
             Debug.Log("VoiceDialogueController: recordingClip samples=" + recordingClip.samples + ", channels=" + recordingClip.channels + ", frequency=" + recordingClip.frequency);
         }
         isRecording = true;
-        SetStatus("正在录音，再次点击结束");
+        SetStatus(StatusRecording);
         Debug.Log("VoiceDialogueController: recording started with " + microphoneDevice);
 #endif
     }
@@ -609,7 +619,7 @@ public class VoiceDialogueController : MonoBehaviour
 
         try
         {
-            SetStatus("正在上传语音...");
+            SetStatus(StatusUploading);
 
             List<IMultipartFormSection> form = new List<IMultipartFormSection>
             {
@@ -625,12 +635,12 @@ public class VoiceDialogueController : MonoBehaviour
             using (UnityWebRequest request = UnityWebRequest.Post(voiceDialogueUrl, form))
             {
                 request.timeout = Mathf.Max(1, requestTimeoutSeconds);
-                SetStatus("正在等待语音识别...");
+                SetStatus(StatusWaitingAi);
                 yield return request.SendWebRequest();
 
                 if (request.result != UnityWebRequest.Result.Success)
                 {
-                    SetStatus("语音发送失败，请重试");
+                    SetStatus(StatusVoiceSendFailed);
                     Debug.LogError("VoiceDialogueController: request failed: " + request.error);
                     yield return PlayFallbackDialogueVideo();
                     yield break;
@@ -713,12 +723,12 @@ public class VoiceDialogueController : MonoBehaviour
 
         if (HasValidAiVoiceResponse(response))
         {
-            SetStatus("姝ｅ湪鎾斁鍥炲簲...");
+            SetStatus(StatusPlayingAi);
             yield return PlayAiVoiceWithSuccessVideo(response);
         }
         else
         {
-            SetStatus("未检测到有效语音，播放预设回应");
+            SetStatus(StatusFallback);
             yield return PlayFallbackDialogueVideo();
         }
     }
@@ -760,7 +770,7 @@ public class VoiceDialogueController : MonoBehaviour
                 }
                 else
                 {
-                    SetStatus("语音音频播放失败，但文本回复已收到");
+                    SetStatus(StatusAudioPlaybackFailed);
                     Debug.LogWarning("VoiceDialogueController: audio download failed: " + request.error);
                 }
             }
@@ -781,6 +791,9 @@ public class VoiceDialogueController : MonoBehaviour
 
     private IEnumerator PlayAiVoiceWithSuccessVideo(VoiceDialogueResponse response)
     {
+        SetStatus(StatusPlayingAi);
+        SetRecordButtonVisible(false);
+
         string successVideoFileName = GetSuccessVideoFileNameForCurrentRole();
         AudioClip aiClip = null;
 
@@ -800,13 +813,20 @@ public class VoiceDialogueController : MonoBehaviour
             }
             else
             {
-                SetStatus("语音音频播放失败，但文本回复已收到");
+                SetStatus(StatusAudioPlaybackFailed);
                 Debug.LogWarning("VoiceDialogueController: audio download failed: " + request.error);
             }
         }
 
+        if (aiClip == null || aiAudioSource == null)
+        {
+            Debug.LogWarning("VoiceDialogueController: AI audio is not available, falling back to preset response video.");
+            yield return PlayFallbackDialogueVideo();
+            yield break;
+        }
+
         ConfigureSpeakingVideoAudio(false);
-        bool videoStarted = PlayDialogueVideo(successVideoFileName, false, false);
+        bool videoStarted = PlayDialogueVideo(successVideoFileName, true, false);
         if (videoStarted && speakingVideoPlayer != null)
         {
             float prepareWaitSeconds = 0f;
@@ -817,19 +837,12 @@ public class VoiceDialogueController : MonoBehaviour
             }
         }
 
-        bool audioStarted = false;
-        if (aiAudioSource != null && aiClip != null)
-        {
-            aiAudioSource.Stop();
-            aiAudioSource.clip = aiClip;
-        }
-        else
-        {
-            Debug.LogWarning("VoiceDialogueController: aiAudioSource or downloaded clip is not available.");
-        }
+        aiAudioSource.Stop();
+        aiAudioSource.clip = aiClip;
 
         if (videoStarted && speakingVideoPlayer != null && speakingVideoPlayer.isPrepared)
         {
+            speakingVideoPlayer.isLooping = true;
             speakingVideoPlayer.Play();
         }
         else if (videoStarted)
@@ -837,28 +850,25 @@ public class VoiceDialogueController : MonoBehaviour
             playDialogueVideoOnPrepare = true;
         }
 
-        if (aiAudioSource != null && aiClip != null)
-        {
-            aiAudioSource.Play();
-            audioStarted = true;
-        }
+        aiAudioSource.Play();
+        yield return WaitForAiAudioClipToFinish(aiClip);
+        yield return new WaitForSecondsRealtime(1f);
 
-        if (audioStarted)
+        StopSpeakingVideo();
+        if (speakingVideoPlayer != null)
         {
-            yield return WaitForAiAudioClipToFinish(aiClip);
+            speakingVideoPlayer.isLooping = false;
         }
-
-        yield return WaitForDialoguePlayback(videoStarted, false);
 
         isSubmitting = false;
-        SetStatus(GetResponseStatus(response));
+        SetStatus(StatusDialogueDone);
 
         ContinueAfterDialogueResponse();
     }
 
     private IEnumerator PlayFallbackDialogueVideo()
     {
-        SetStatus("未检测到有效语音，播放预设回应");
+        SetStatus(StatusFallback);
 
         string selectedFallbackVideoFileName = GetFallbackVideoFileNameForCurrentRole();
 
@@ -876,7 +886,7 @@ public class VoiceDialogueController : MonoBehaviour
         string fallbackPath = Path.Combine(Application.streamingAssetsPath, "Videos", normalizedFallbackFileName);
         if (!File.Exists(fallbackPath))
         {
-            SetStatus("兜底视频缺失，请检查资源");
+            SetStatus(StatusFallbackVideoMissing);
             Debug.LogWarning("VoiceDialogueController: fallback video missing. path=" + fallbackPath);
             isSubmitting = false;
             yield break;
@@ -896,7 +906,11 @@ public class VoiceDialogueController : MonoBehaviour
         if (!string.IsNullOrEmpty(dialogueNextNodeId) && fmvController != null)
         {
             fmvController.PlayNodeFromOutside(dialogueNextNodeId);
+            return;
         }
+
+        SetStatus(StatusDialogueDone);
+        SetRecordButtonVisible(true);
     }
 
     private string GetSuccessVideoFileNameForCurrentRole()
