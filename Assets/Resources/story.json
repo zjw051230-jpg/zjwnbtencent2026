@@ -101,6 +101,15 @@
       "video": "dialogue_Einstein.mp4",
       "eventType": "voiceDialogue",
       "choiceTime": -1,
+      "defaultNext": "Einstein_main1",
+      "showInMenu": true,
+      "menuTitle": "\u8df3\u5230\u7231\u56e0\u65af\u5766\u5bf9\u8bdd\u573a\u666f",
+      "choices": []
+    },
+    {
+      "id": "Einstein_main1",
+      "video": "Einstein_main1.mp4",
+      "choiceTime": -1,
       "defaultNext": "",
       "showInMenu": true,
       "menuTitle": "\u8df3\u5230\u7231\u56e0\u65af\u5766\u5bf9\u8bdd\u573a\u666f",
@@ -108,8 +117,7 @@
     },
     {
       "id": "dialogue_scene",
-      "video": "",
-      "eventType": "voiceDialogue",
+      "video": "dialogue_scene.mp4",
       "choiceTime": -1,
       "defaultNext": "",
       "showInMenu": false,
