@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const zlib = require("zlib");
+const { createDoubaoTtsAudio } = require("./doubaoTextToSpeechService.js");
 
 const DOUBAO_REALTIME_URL = "wss://openspeech.bytedance.com/api/v3/realtime/dialogue";
 const DEFAULT_RESOURCE_ID = "volc.speech.dialog";
@@ -19,7 +20,8 @@ const CONNECTION_STARTED_TIMEOUT_MS = 8000;
 const SESSION_STARTED_TIMEOUT_MS = 10000;
 const ASR_CHAT_TIMEOUT_MS = 60000;
 const DOUBAO_QPM_COOLDOWN_MS = 60000;
-const TTS_FINALIZATION_WAIT_MS = 2000;
+const TTS_FINALIZATION_WAIT_MS = 5000;
+const HTTP_TTS_ENABLED = process.env.DOUBAO_HTTP_TTS_ENABLED === "true";
 const TTS_SAMPLE_RATE = 24000;
 const TTS_CHANNELS = 1;
 const TTS_BITS_PER_SAMPLE = 16;
@@ -108,7 +110,8 @@ async function createDoubaoVoiceDialogue({
       sceneId,
       outputDir,
       publicBaseUrl,
-      config
+      config,
+      runtimeConfig
     });
 
     if (!result || typeof result !== "object") {
@@ -145,7 +148,8 @@ async function runDoubaoRealtimeSession({
   sceneId,
   outputDir,
   publicBaseUrl,
-  config
+  config,
+  runtimeConfig = {}
 }) {
   const wav = await readWavPcm16(audioPath);
   const connectId = crypto.randomUUID();
@@ -190,6 +194,7 @@ async function runDoubaoRealtimeSession({
     let ttsAudioBytes = 0;
     let successFinalizing = false;
     let successFinalizeTimerId = null;
+    let ttsWaitTimedOut = false;
     const ttsChunks = [];
     const eventWaiters = new Map();
 
@@ -408,16 +413,20 @@ async function runDoubaoRealtimeSession({
 
         if (frame.eventName === "ChatEnded") {
           chatEnded = true;
-          maybeSendFinishSession();
+          console.log("[doubao-tts] chatEnded=true, waiting for realtime tts...");
           scheduleSuccessFinalize();
           return;
         }
 
-        if (frame.eventName === "TTSResponse") {
+        if (frame.eventName === "TTSResponse" ||
+            (frame.audio && frame.audio.length > 0 &&
+             (frame.messageType === MESSAGE_TYPE.SERVER_AUDIO_ONLY_RESPONSE ||
+              frame.messageType === MESSAGE_TYPE.SERVER_LEGACY_AUDIO_ONLY_RESPONSE))) {
           if (frame.audio && frame.audio.length > 0) {
             ttsChunks.push(frame.audio);
             ttsChunkCount += 1;
             ttsAudioBytes += frame.audio.length;
+            console.log(`[doubao-tts] tts chunk received bytes=${frame.audio.length}`);
           }
           return;
         }
@@ -513,7 +522,7 @@ async function runDoubaoRealtimeSession({
         return;
       }
 
-      if (!chatEnded && !ttsEnded) {
+      if (!ttsEnded && !ttsWaitTimedOut) {
         return;
       }
 
@@ -549,6 +558,12 @@ async function runDoubaoRealtimeSession({
       }
 
       successFinalizeTimerId = setTimeout(() => {
+        ttsWaitTimedOut = true;
+        console.warn(`[doubao-tts] tts wait timeout ms=${TTS_FINALIZATION_WAIT_MS}`);
+        if (ttsAudioBytes <= 0) {
+          console.warn("[doubao-tts] no tts chunks before return");
+        }
+        maybeSendFinishSession();
         finalizeSuccess();
       }, TTS_FINALIZATION_WAIT_MS);
     }
@@ -571,12 +586,26 @@ async function runDoubaoRealtimeSession({
           publicBaseUrl,
           sessionId,
           ttsChunkCount,
-          ttsAudioBytes
+          ttsAudioBytes,
+          runtimeConfig,
+          speaker: config.speaker
         });
         finish(result);
       } catch (error) {
         successFinalizing = false;
         transportError = getErrorMessage(error);
+        if (resolvedTranscript || resolvedReplyText) {
+          finish({
+            ok: true,
+            transcript: resolvedTranscript,
+            replyText: resolvedReplyText,
+            audioUrl: "",
+            source: "doubao_partial",
+            error: `TTS_NOT_AVAILABLE:${getShortErrorMessage(error)}`
+          });
+          return;
+        }
+
         finish({ ok: false, error: transportError });
       }
     }
@@ -1122,7 +1151,7 @@ function buildFrame({
   return frame;
 }
 
-async function buildDialogueSuccess({ transcript, replyText, ttsChunks, outputDir, publicBaseUrl, sessionId, ttsChunkCount, ttsAudioBytes }) {
+async function buildDialogueSuccess({ transcript, replyText, ttsChunks, outputDir, publicBaseUrl, sessionId, ttsChunkCount, ttsAudioBytes, runtimeConfig, speaker }) {
   const normalizedTranscript = toStringValue(transcript);
   const normalizedReplyText = toStringValue(replyText);
 
@@ -1143,13 +1172,36 @@ async function buildDialogueSuccess({ transcript, replyText, ttsChunks, outputDi
     };
   }
 
-  console.log(`[doubao] tts audio chunks=${ttsChunkCount || 0} bytes=${ttsAudioBytes || 0}`);
+  console.log(`[doubao-tts] tts chunks count=${ttsChunkCount || 0}`);
+  console.log(`[doubao-tts] tts total bytes=${ttsAudioBytes || 0}`);
 
   let audioUrl = "";
-  if (Array.isArray(ttsChunks) && ttsChunks.length > 0 && outputDir && publicBaseUrl) {
+  let postTtsError = "";
+  if (Array.isArray(ttsChunks) && ttsChunks.length > 0 && ttsAudioBytes > 0 && outputDir && publicBaseUrl) {
     const savedAudio = await saveDoubaoTtsWav({ outputDir, publicBaseUrl, sessionId, ttsChunks });
     audioUrl = savedAudio.audioUrl;
-    console.log(`[doubao] tts wav saved path=${savedAudio.filePath} bytes=${savedAudio.bytes}`);
+    console.log(`[doubao-tts] writing realtime wav path=${savedAudio.filePath}`);
+    console.log(`[doubao-tts] realtime wav bytes=${savedAudio.bytes}`);
+    console.log(`[doubao-tts] realtime audioUrl=${audioUrl}`);
+    console.log("[doubao-post-tts] skipped because realtime tts audio exists");
+  } else if (!HTTP_TTS_ENABLED) {
+    postTtsError = "REALTIME_TTS_TIMEOUT";
+    console.log("[doubao-post-tts] skipped because DOUBAO_HTTP_TTS_ENABLED is not true");
+  } else {
+    try {
+      const savedAudio = await createDoubaoTtsAudio({
+        text: effectiveReplyText,
+        outputDir,
+        publicBaseUrl,
+        speaker,
+        runtimeConfig
+      });
+      audioUrl = savedAudio.audioUrl;
+      console.log(`[doubao-post-tts] generated bytes=${savedAudio.bytes}`);
+    } catch (error) {
+      postTtsError = getShortErrorMessage(error);
+      console.warn(`[doubao-post-tts] failed: ${postTtsError}`);
+    }
   }
 
   if (replyFallbackUsed) {
@@ -1158,7 +1210,7 @@ async function buildDialogueSuccess({ transcript, replyText, ttsChunks, outputDi
       transcript: normalizedTranscript,
       replyText: effectiveReplyText,
       audioUrl,
-      source: audioUrl ? "doubao_partial" : "doubao_partial",
+      source: audioUrl ? "doubao" : "doubao_partial",
       error: "DOUBAO_REPLY_FALLBACK"
     };
   }
@@ -1170,7 +1222,7 @@ async function buildDialogueSuccess({ transcript, replyText, ttsChunks, outputDi
       replyText: effectiveReplyText,
       audioUrl: "",
       source: "doubao_partial",
-      error: "TTS_NOT_AVAILABLE"
+      error: postTtsError ? `TTS_NOT_AVAILABLE:${postTtsError}` : "TTS_NOT_AVAILABLE"
     };
   }
 
@@ -1621,6 +1673,14 @@ function getErrorMessage(error) {
   }
 
   return error.stack || error.message || String(error);
+}
+
+function getShortErrorMessage(error) {
+  if (!error) {
+    return "unknown error";
+  }
+
+  return error.message || String(error);
 }
 
 module.exports = {

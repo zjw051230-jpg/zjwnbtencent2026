@@ -205,7 +205,11 @@ app.post("/api/voice-dialogue", upload.single("audio"), async (req, res) => {
       });
     }
 
-    res.json(ensureVoiceDialogueResponse(result));
+    const responseBody = ensureVoiceDialogueResponse(result);
+    console.log(
+      `[voice-dialogue] returning source=${responseBody.source || ""} transcriptLength=${responseBody.transcript ? responseBody.transcript.length : 0} replyTextLength=${responseBody.replyText ? responseBody.replyText.length : 0} audioUrlPresent=${Boolean(responseBody.audioUrl)} error=${responseBody.error || ""}`
+    );
+    res.json(responseBody);
   } catch (error) {
     console.error("[voice-dialogue] failed:", getErrorMessage(error));
     res.json(createDefaultDialogueResponse(getErrorMessage(error)));

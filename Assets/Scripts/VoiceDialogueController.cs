@@ -173,6 +173,8 @@ public class VoiceDialogueController : MonoBehaviour
             speakingVideoAudioSource = gameObject.AddComponent<AudioSource>();
             speakingVideoAudioSource.playOnAwake = false;
         }
+
+        EnsureSeparateAudioSources();
     }
 
     public void OpenDialogue(string roleIdValue, string roleNameValue, string sceneIdValue)
@@ -300,6 +302,8 @@ public class VoiceDialogueController : MonoBehaviour
             return;
         }
 
+        EnsureSeparateAudioSources();
+
         speakingVideoPlayer.audioOutputMode = VideoAudioOutputMode.AudioSource;
         speakingVideoPlayer.controlledAudioTrackCount = 1;
         speakingVideoPlayer.EnableAudioTrack(0, enableVideoAudio);
@@ -313,6 +317,16 @@ public class VoiceDialogueController : MonoBehaviour
         speakingVideoPlayer.SetTargetAudioSource(0, speakingVideoAudioSource);
         speakingVideoAudioSource.mute = !enableVideoAudio;
         speakingVideoAudioSource.volume = enableVideoAudio ? 1f : 0f;
+    }
+
+    private void EnsureSeparateAudioSources()
+    {
+        if (aiAudioSource != null && speakingVideoAudioSource != null && aiAudioSource == speakingVideoAudioSource)
+        {
+            Debug.LogWarning("VoiceDialogueController: aiAudioSource and speakingVideoAudioSource should not be the same AudioSource. Creating a separate speakingVideoAudioSource.");
+            speakingVideoAudioSource = gameObject.AddComponent<AudioSource>();
+            speakingVideoAudioSource.playOnAwake = false;
+        }
     }
 
     private void EnsureSpeakingVideoOutput()
@@ -782,6 +796,10 @@ public class VoiceDialogueController : MonoBehaviour
             if (request.result == UnityWebRequest.Result.Success)
             {
                 aiClip = DownloadHandlerAudioClip.GetContent(request);
+                if (aiClip != null)
+                {
+                    Debug.Log($"AI audio clip length = {aiClip.length}, channels = {aiClip.channels}, frequency = {aiClip.frequency}");
+                }
             }
             else
             {
@@ -828,7 +846,12 @@ public class VoiceDialogueController : MonoBehaviour
             audioStarted = true;
         }
 
-        yield return WaitForDialoguePlayback(videoStarted, audioStarted);
+        if (audioStarted)
+        {
+            yield return WaitForAiAudioClipToFinish(aiClip);
+        }
+
+        yield return WaitForDialoguePlayback(videoStarted, false);
 
         isSubmitting = false;
         SetStatus(GetResponseStatus(response));
@@ -944,6 +967,25 @@ public class VoiceDialogueController : MonoBehaviour
 
         float elapsed = 0f;
         while (elapsed < maxDuration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            yield return null;
+        }
+    }
+
+    private IEnumerator WaitForAiAudioClipToFinish(AudioClip clip)
+    {
+        if (clip == null || aiAudioSource == null)
+        {
+            yield break;
+        }
+
+        float maxWait = Mathf.Max(0.1f, clip.length + 2f);
+        float elapsed = 0f;
+        while (elapsed < maxWait &&
+               aiAudioSource != null &&
+               aiAudioSource.clip == clip &&
+               aiAudioSource.time < clip.length - 0.05f)
         {
             elapsed += Time.unscaledDeltaTime;
             yield return null;
