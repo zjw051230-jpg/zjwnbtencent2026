@@ -25,6 +25,8 @@ public class FMVDemoController : MonoBehaviour
 
     [Header("Events")]
     public VoiceDialogueController voiceDialogueController;
+    [Header("Interaction UI")]
+    public TMP_Text clickHintText;
 
     private const string StoryResourceName = "story";
     private const string SaveKey = "FMV_DEMO_CURRENT_NODE";
@@ -38,6 +40,7 @@ public class FMVDemoController : MonoBehaviour
     private bool previewPlayback;
     private bool isMenuPaused;
     private bool wasVideoPausedForMenu;
+    private TMP_FontAsset cachedChineseFont;
 
     public bool IsMenuPaused => isMenuPaused;
 
@@ -118,6 +121,21 @@ public class FMVDemoController : MonoBehaviour
 
     private void Update()
     {
+        if (IsClickToNextNode(currentNode))
+        {
+            if (isMenuPaused)
+            {
+                return;
+            }
+
+            if (Input.GetMouseButtonDown(0) || Input.touchCount > 0)
+            {
+                GoToClickNextNode();
+            }
+
+            return;
+        }
+
         if (currentNode == null || choicesVisible || videoPlayer == null || previewPlayback || isMenuPaused)
         {
             return;
@@ -280,6 +298,7 @@ public class FMVDemoController : MonoBehaviour
         choicesVisible = false;
         currentVideoStarted = false;
         previewPlayback = previewOnly;
+        HideClickHint();
 
         if (endingText != null)
         {
@@ -293,6 +312,7 @@ public class FMVDemoController : MonoBehaviour
         }
 
         videoPlayer.Stop();
+        videoPlayer.isLooping = IsClickToNextNode(node) && node.loopUntilClick;
         ClearVideoOutput();
         if (videoDisplay != null)
         {
@@ -303,6 +323,10 @@ public class FMVDemoController : MonoBehaviour
         videoPlayer.source = VideoSource.Url;
         videoPlayer.url = BuildVideoUrl(node.video);
         videoPlayer.Prepare();
+        if (IsClickToNextNode(node))
+        {
+            ShowClickHint(node.clickHintText);
+        }
 
         Debug.Log("FMVDemoController: preparing node " + node.id + " with video " + videoPlayer.url + (previewOnly ? " preview" : ""));
     }
@@ -531,6 +555,11 @@ public class FMVDemoController : MonoBehaviour
             return;
         }
 
+        if (IsClickToNextNode(currentNode))
+        {
+            return;
+        }
+
         ShowEnding();
     }
 
@@ -620,6 +649,7 @@ public class FMVDemoController : MonoBehaviour
     private void OpenVoiceDialogueNode(StoryNode node)
     {
         ClearChoices();
+        HideClickHint();
 
         currentNode = node;
         choicesVisible = true;
@@ -647,6 +677,113 @@ public class FMVDemoController : MonoBehaviour
         voiceDialogueController.OpenDialogue(roleId, roleName, node.id, node.video, node.defaultNext, this);
 
         Debug.Log("FMVDemoController: opened voice dialogue node " + node.id);
+    }
+
+    private bool IsClickToNextNode(StoryNode node)
+    {
+        return node != null && string.Equals(node.interactionType, "clickToNext", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void GoToClickNextNode()
+    {
+        if (!IsClickToNextNode(currentNode))
+        {
+            return;
+        }
+
+        string nextNodeId = currentNode.clickNextNodeId;
+        HideClickHint();
+
+        if (videoPlayer != null)
+        {
+            videoPlayer.isLooping = false;
+        }
+
+        if (string.IsNullOrEmpty(nextNodeId))
+        {
+            Debug.LogWarning("FMVDemoController: clickToNext node has empty clickNextNodeId: " + currentNode.id);
+            return;
+        }
+
+        PlayNode(nextNodeId);
+    }
+
+    private void ShowClickHint(string hint)
+    {
+        EnsureClickHintText();
+        if (clickHintText == null)
+        {
+            return;
+        }
+
+        clickHintText.text = string.IsNullOrEmpty(hint) ? "\u8bf7\u70b9\u51fb\u5e3d\u5b50" : hint;
+        clickHintText.gameObject.SetActive(true);
+    }
+
+    private void HideClickHint()
+    {
+        if (clickHintText != null)
+        {
+            clickHintText.gameObject.SetActive(false);
+        }
+    }
+
+    private void EnsureClickHintText()
+    {
+        if (clickHintText != null)
+        {
+            return;
+        }
+
+        Canvas canvas = FindObjectOfType<Canvas>(true);
+        if (canvas == null)
+        {
+            Debug.LogWarning("FMVDemoController: Canvas not found, cannot create click hint text.");
+            return;
+        }
+
+        GameObject textObject = new GameObject("ClickToNextHintText", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        textObject.transform.SetParent(canvas.transform, false);
+
+        RectTransform rectTransform = textObject.GetComponent<RectTransform>();
+        rectTransform.anchorMin = new Vector2(0.5f, 0f);
+        rectTransform.anchorMax = new Vector2(0.5f, 0f);
+        rectTransform.anchoredPosition = new Vector2(0f, 120f);
+        rectTransform.sizeDelta = new Vector2(720f, 80f);
+
+        clickHintText = textObject.GetComponent<TMP_Text>();
+        clickHintText.fontSize = 36f;
+        clickHintText.alignment = TextAlignmentOptions.Center;
+        clickHintText.color = Color.white;
+        clickHintText.raycastTarget = false;
+
+        TMP_FontAsset fontAsset = ResolveChineseFont();
+        if (fontAsset != null)
+        {
+            clickHintText.font = fontAsset;
+        }
+
+        textObject.SetActive(false);
+    }
+
+    private TMP_FontAsset ResolveChineseFont()
+    {
+        if (cachedChineseFont != null)
+        {
+            return cachedChineseFont;
+        }
+
+        TMP_Text[] texts = FindObjectsOfType<TMP_Text>(true);
+        foreach (TMP_Text text in texts)
+        {
+            if (text != null && text.font != null && text.font.name.Contains("SIMFANG"))
+            {
+                cachedChineseFont = text.font;
+                return cachedChineseFont;
+            }
+        }
+
+        return null;
     }
 
     private void ShowEnding()
@@ -689,6 +826,10 @@ public class StoryNode
     public string eventType;
     public float choiceTime = -1f;
     public string defaultNext;
+    public string interactionType;
+    public string clickHintText;
+    public string clickNextNodeId;
+    public bool loopUntilClick;
     public bool showInMenu;
     public string menuTitle;
     public ChoiceData[] choices;

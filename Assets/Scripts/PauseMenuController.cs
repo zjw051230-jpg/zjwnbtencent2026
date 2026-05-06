@@ -1,10 +1,33 @@
+using System.Collections;
 using System.Collections.Generic;
+using System.Text;
 using TMPro;
 using UnityEngine;
+using UnityEngine.Networking;
 using UnityEngine.UI;
 
 public class PauseMenuController : MonoBehaviour
 {
+    [System.Serializable]
+    public class SaveMemoryResponse
+    {
+        public bool ok;
+        public bool saved;
+        public string memoryId;
+        public int recordCount;
+        public string fileName;
+        public string error;
+    }
+
+    [System.Serializable]
+    private class SaveMemoryRequest
+    {
+        public string client;
+        public string sceneId;
+        public string roleId;
+        public string roleName;
+    }
+
     public GameObject pauseMenuPanel;
     public Transform menuButtonRoot;
     public Button menuButtonPrefab;
@@ -12,9 +35,15 @@ public class PauseMenuController : MonoBehaviour
     public FMVDemoController fmvController;
     public OpeningQuestionController openingQuestionController;
     public VoiceDialogueController voiceDialogueController;
+    [SerializeField] private Button saveMemoryButton;
+    [SerializeField] private TMP_Text saveMemoryStatusText;
+    [SerializeField] private string apiBaseUrl = "http://localhost:3000";
+    [SerializeField] private string memorySceneId = "dialogue_scene";
 
     private readonly List<Button> generatedButtons = new List<Button>();
     private bool isOpen;
+    private bool isSavingMemory;
+    private Coroutine saveMemoryCoroutine;
     private TMP_FontAsset menuFontAsset;
     private Font unityMenuFont;
 
@@ -79,6 +108,7 @@ public class PauseMenuController : MonoBehaviour
         }
 
         RebuildButtons();
+        AddSaveMemoryButton();
     }
 
     public void CloseMenu()
@@ -272,13 +302,68 @@ public class PauseMenuController : MonoBehaviour
 
         button.onClick.AddListener(() =>
         {
-            JumpToStoryNode(nodeId);
+            JumpToRoleStory(label, nodeId);
         });
+    }
+
+    private void AddSaveMemoryButton()
+    {
+        if (menuButtonRoot == null)
+        {
+            return;
+        }
+
+        saveMemoryButton = CreateMenuButton(new StoryNode { id = "save_memory", menuTitle = "\u4fdd\u5b58\u8bb0\u5fc6" });
+        generatedButtons.Add(saveMemoryButton);
+        saveMemoryButton.onClick.AddListener(() =>
+        {
+            StartSaveMemory();
+        });
+
+        saveMemoryStatusText = CreateStatusText("SaveMemoryStatusText", menuButtonRoot, "");
     }
 
     private void JumpToStoryNode(string nodeId)
     {
         CloseMenuForJump();
+        CancelMenuPauseForJump();
+        if (openingQuestionController != null)
+        {
+            openingQuestionController.StopOpeningFlowForExternalJump();
+        }
+        ClearUiBeforeJump();
+        if (fmvController != null)
+        {
+            fmvController.PlayNodeFromOutside(nodeId);
+        }
+    }
+
+    private void JumpToRoleStory(string label, string nodeId)
+    {
+        CloseMenuForJump();
+        CancelMenuPauseForJump();
+        ClearUiBeforeJump();
+
+        string roleId = nodeId == "intro_Einstein" ? "Einstein" : "Mozart";
+        string roleName = nodeId == "intro_Einstein" ? "Einstein" : "Mozart";
+
+        if (openingQuestionController != null)
+        {
+            openingQuestionController.EnterRoleStoryFromMenu(roleId, roleName, nodeId);
+            return;
+        }
+
+        if (voiceDialogueController != null)
+        {
+            voiceDialogueController.roleId = roleId;
+            voiceDialogueController.roleName = roleName;
+        }
+
+        PlayerPrefs.SetString("PLAYER_ROLE_ID", roleId);
+        PlayerPrefs.SetString("PLAYER_ROLE_NAME", roleName);
+        PlayerPrefs.SetString("PLAYER_START_NODE", nodeId);
+        PlayerPrefs.Save();
+
         if (fmvController != null)
         {
             fmvController.PlayNodeFromOutside(nodeId);
@@ -322,6 +407,24 @@ public class PauseMenuController : MonoBehaviour
         string label = string.IsNullOrEmpty(node.menuTitle) ? node.id : node.menuTitle;
         SetButtonLabel(button, label);
         return button;
+    }
+
+    private TMP_Text CreateStatusText(string objectName, Transform parent, string textValue)
+    {
+        TMP_Text text = CreateText(objectName, parent, textValue, 22, Vector2.zero, new Vector2(700f, 44f));
+        text.color = Color.white;
+        text.alignment = TextAlignmentOptions.Center;
+
+        LayoutElement layoutElement = text.gameObject.GetComponent<LayoutElement>();
+        if (layoutElement == null)
+        {
+            layoutElement = text.gameObject.AddComponent<LayoutElement>();
+        }
+
+        layoutElement.minHeight = 44f;
+        layoutElement.preferredHeight = 44f;
+        layoutElement.flexibleHeight = 0f;
+        return text;
     }
 
     private Button CreateButton(string objectName, Transform parent, string label, Vector2 position, Vector2 size)
@@ -424,6 +527,16 @@ public class PauseMenuController : MonoBehaviour
 
     private void ClearButtons()
     {
+        if (saveMemoryStatusText != null)
+        {
+            Destroy(saveMemoryStatusText.gameObject);
+        }
+
+        saveMemoryButton = null;
+        saveMemoryStatusText = null;
+        saveMemoryCoroutine = null;
+        isSavingMemory = false;
+
         foreach (Button button in generatedButtons)
         {
             if (button != null)
@@ -433,6 +546,130 @@ public class PauseMenuController : MonoBehaviour
         }
 
         generatedButtons.Clear();
+    }
+
+    private void StartSaveMemory()
+    {
+        if (isSavingMemory || saveMemoryCoroutine != null)
+        {
+            Debug.Log("Save memory request ignored because one is already in progress.");
+            SetSaveMemoryStatus("\u6b63\u5728\u4fdd\u5b58\u4e2d\uff0c\u8bf7\u7a0d\u5019...");
+            return;
+        }
+
+        isSavingMemory = true;
+        if (saveMemoryButton != null)
+        {
+            saveMemoryButton.interactable = false;
+        }
+
+        saveMemoryCoroutine = StartCoroutine(SaveMemory());
+    }
+
+    private IEnumerator SaveMemory()
+    {
+        SetSaveMemoryStatus("\u6b63\u5728\u4fdd\u5b58\u8bb0\u5fc6...");
+
+        string roleId;
+        string roleName;
+        ResolveRoleInfo(out roleId, out roleName);
+
+        SaveMemoryRequest body = new SaveMemoryRequest
+        {
+            client = "unity",
+            sceneId = memorySceneId,
+            roleId = roleId,
+            roleName = roleName
+        };
+
+        string url = apiBaseUrl.TrimEnd('/') + "/api/memory/save";
+        string json = JsonUtility.ToJson(body);
+        byte[] payload = Encoding.UTF8.GetBytes(json);
+
+        using (UnityWebRequest request = new UnityWebRequest(url, UnityWebRequest.kHttpVerbPOST))
+        {
+            request.uploadHandler = new UploadHandlerRaw(payload);
+            request.downloadHandler = new DownloadHandlerBuffer();
+            request.SetRequestHeader("Content-Type", "application/json");
+            request.timeout = 8;
+
+            yield return request.SendWebRequest();
+
+            bool requestFailed =
+                request.result == UnityWebRequest.Result.ConnectionError ||
+                request.result == UnityWebRequest.Result.ProtocolError ||
+                request.result == UnityWebRequest.Result.DataProcessingError;
+
+            if (requestFailed)
+            {
+                SetSaveMemoryStatus("\u4fdd\u5b58\u5931\u8d25\uff0c\u8bf7\u786e\u8ba4\u540e\u7aef\u5df2\u542f\u52a8");
+            }
+            else
+            {
+                string responseText = request.downloadHandler != null ? request.downloadHandler.text : "";
+                try
+                {
+                    SaveMemoryResponse response = JsonUtility.FromJson<SaveMemoryResponse>(responseText);
+                    if (response != null && response.ok)
+                    {
+                        if (response.recordCount > 0)
+                        {
+                            SetSaveMemoryStatus("\u8bb0\u5fc6\u5df2\u4fdd\u5b58\uff0c\u5171 " + response.recordCount + " \u6761");
+                        }
+                        else
+                        {
+                            SetSaveMemoryStatus("\u8bb0\u5fc6\u5df2\u4fdd\u5b58");
+                        }
+                    }
+                    else
+                    {
+                        SetSaveMemoryStatus("\u4fdd\u5b58\u5931\u8d25\uff0c\u8bf7\u786e\u8ba4\u540e\u7aef\u5df2\u542f\u52a8");
+                    }
+                }
+                catch
+                {
+                    SetSaveMemoryStatus("\u672a\u8fde\u63a5\u672c\u5730\u540e\u7aef\uff0c\u65e0\u6cd5\u4fdd\u5b58\u8bb0\u5fc6");
+                }
+            }
+        }
+
+        if (saveMemoryButton != null)
+        {
+            saveMemoryButton.interactable = true;
+        }
+
+        saveMemoryCoroutine = null;
+        isSavingMemory = false;
+    }
+
+    private void ResolveRoleInfo(out string roleId, out string roleName)
+    {
+        roleId = "";
+        roleName = "";
+
+        if (voiceDialogueController != null)
+        {
+            roleId = string.IsNullOrEmpty(voiceDialogueController.roleId) ? "" : voiceDialogueController.roleId;
+            roleName = string.IsNullOrEmpty(voiceDialogueController.roleName) ? "" : voiceDialogueController.roleName;
+        }
+
+        if (string.IsNullOrEmpty(roleId))
+        {
+            roleId = PlayerPrefs.GetString("PLAYER_ROLE_ID", "");
+        }
+
+        if (string.IsNullOrEmpty(roleName))
+        {
+            roleName = PlayerPrefs.GetString("PLAYER_ROLE_NAME", "");
+        }
+    }
+
+    private void SetSaveMemoryStatus(string message)
+    {
+        if (saveMemoryStatusText != null)
+        {
+            saveMemoryStatusText.text = message;
+        }
     }
 
     private void SetButtonLabel(Button button, string label)

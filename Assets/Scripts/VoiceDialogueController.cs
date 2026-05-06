@@ -776,10 +776,7 @@ public class VoiceDialogueController : MonoBehaviour
             SetStatus(GetResponseStatus(response));
         }
 
-        if (!string.IsNullOrEmpty(dialogueNextNodeId) && fmvController != null)
-        {
-            fmvController.PlayNodeFromOutside(dialogueNextNodeId);
-        }
+        ContinueAfterDialogueResponse();
     }
 
     private IEnumerator PlayAiVoiceWithSuccessVideo(VoiceDialogueResponse response)
@@ -856,10 +853,7 @@ public class VoiceDialogueController : MonoBehaviour
         isSubmitting = false;
         SetStatus(GetResponseStatus(response));
 
-        if (!string.IsNullOrEmpty(dialogueNextNodeId) && fmvController != null)
-        {
-            fmvController.PlayNodeFromOutside(dialogueNextNodeId);
-        }
+        ContinueAfterDialogueResponse();
     }
 
     private IEnumerator PlayFallbackDialogueVideo()
@@ -893,7 +887,16 @@ public class VoiceDialogueController : MonoBehaviour
         bool videoStarted = PlayDialogueVideo(selectedFallbackVideoFileName, false);
         yield return WaitForDialoguePlayback(videoStarted, false);
         isSubmitting = false;
+        ContinueAfterDialogueResponse();
         yield break;
+    }
+
+    private void ContinueAfterDialogueResponse()
+    {
+        if (!string.IsNullOrEmpty(dialogueNextNodeId) && fmvController != null)
+        {
+            fmvController.PlayNodeFromOutside(dialogueNextNodeId);
+        }
     }
 
     private string GetSuccessVideoFileNameForCurrentRole()

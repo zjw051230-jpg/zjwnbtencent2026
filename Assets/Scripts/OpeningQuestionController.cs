@@ -971,6 +971,109 @@ public class OpeningQuestionController : MonoBehaviour
         }
     }
 
+    public void EnterRoleStoryFromMenu(string roleId, string roleName, string startNodeId)
+    {
+        if (string.IsNullOrEmpty(roleId) || string.IsNullOrEmpty(startNodeId))
+        {
+            Debug.LogError("OpeningQuestionController: menu role entry has empty roleId or startNodeId.");
+            return;
+        }
+
+        StopAllCoroutines();
+        isSubmitting = false;
+        isChangingQuestion = false;
+        openingFlowStarted = false;
+        openingVideoFinished = true;
+        CancelMenuPauseForExternalJump();
+
+        if (openingVideoPlayer != null)
+        {
+            openingVideoPlayer.Stop();
+        }
+
+        if (questionAudioSource != null)
+        {
+            questionAudioSource.Stop();
+        }
+
+        if (roleAudioSource != null)
+        {
+            roleAudioSource.Stop();
+        }
+
+        if (blackScreenPanel != null)
+        {
+            blackScreenPanel.SetActive(false);
+        }
+
+        HideOpeningQuestionUIForExternalJump();
+        HideVideoDisplay();
+
+        string resolvedRoleName = string.IsNullOrEmpty(roleName) ? roleId : roleName;
+        PlayerPrefs.SetString("PLAYER_ROLE_ID", roleId);
+        PlayerPrefs.SetString("PLAYER_ROLE_NAME", resolvedRoleName);
+        PlayerPrefs.SetString("PLAYER_START_NODE", startNodeId);
+        PlayerPrefs.Save();
+
+        VoiceDialogueController voiceController = FindObjectOfType<VoiceDialogueController>(true);
+        if (voiceController != null)
+        {
+            voiceController.roleId = roleId;
+            voiceController.roleName = resolvedRoleName;
+        }
+
+        AudioClip roleClip = GetRoleAudioClip(roleId);
+        if (roleClip != null && roleAudioSource != null)
+        {
+            roleAudioSource.clip = roleClip;
+            roleAudioSource.Play();
+        }
+        else if (roleClip == null)
+        {
+            Debug.LogWarning("OpeningQuestionController: role audio not found or not assigned for roleId=" + roleId + ", entering node directly.");
+        }
+        else
+        {
+            Debug.LogWarning("OpeningQuestionController: Role Audio Source is not assigned, entering node directly.");
+        }
+
+        if (fmvController == null)
+        {
+            fmvController = FindObjectOfType<FMVDemoController>(true);
+        }
+
+        if (fmvController != null)
+        {
+            fmvController.PlayNodeFromOutside(startNodeId);
+        }
+        else
+        {
+            Debug.LogError("OpeningQuestionController: FMVDemoController is not assigned.");
+        }
+    }
+
+    public void StopOpeningFlowForExternalJump()
+    {
+        StopAllCoroutines();
+        isSubmitting = false;
+        isChangingQuestion = false;
+        openingFlowStarted = false;
+        openingVideoFinished = true;
+        CancelMenuPauseForExternalJump();
+
+        if (openingVideoPlayer != null)
+        {
+            openingVideoPlayer.Stop();
+        }
+
+        if (questionAudioSource != null)
+        {
+            questionAudioSource.Stop();
+        }
+
+        HideOpeningQuestionUIForExternalJump();
+    }
+
     private IEnumerator EnterGameAfterDelay(string startNodeId)
     {
         yield return new WaitForSeconds(enterGameDelay);
