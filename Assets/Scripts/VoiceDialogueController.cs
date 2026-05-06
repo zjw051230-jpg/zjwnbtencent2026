@@ -10,6 +10,22 @@ using UnityEngine.Video;
 
 public class VoiceDialogueController : MonoBehaviour
 {
+    private const float DefaultDialogueVideoAspectRatio = 1112f / 834f;
+
+    [System.Serializable]
+    public class RoleFallbackVideoData
+    {
+        public string roleId;
+        public string fallbackVideoFileName;
+    }
+
+    [System.Serializable]
+    public class RoleDialogueVideoData
+    {
+        public string roleId;
+        public string videoFileName;
+    }
+
     [Header("API")]
     public string apiBaseUrl = "http://localhost:3000";
     public string voiceDialogueApiUrl = "http://localhost:3000/api/voice-dialogue";
@@ -20,7 +36,11 @@ public class VoiceDialogueController : MonoBehaviour
     public string sceneId = "dialogue_scene";
     public string speakingVideoFileName = "role_speaking.mp4";
     public string successSpeakingVideoFileName = "role_speaking.mp4";
-    public string fallbackVideoFileName = "dialogue_fallback.mp4";
+    public string defaultSuccessVideoFileName = "dialogue_success_default.mp4";
+    public RoleDialogueVideoData[] roleSuccessVideos;
+    public string fallbackVideoFileName = "dialogue_fallback_default.mp4";
+    public string defaultFallbackVideoFileName = "dialogue_fallback_default.mp4";
+    public RoleFallbackVideoData[] roleFallbackVideos;
     private string dialogueVideoFileName;
     private string dialogueNextNodeId;
     private FMVDemoController fmvController;
@@ -39,6 +59,7 @@ public class VoiceDialogueController : MonoBehaviour
 
     [Header("Playback")]
     public AudioSource aiAudioSource;
+    public AudioSource speakingVideoAudioSource;
     public VideoPlayer speakingVideoPlayer;
     public GameObject speakingVideoDisplay;
     public RawImage speakingVideoRawImage;
@@ -48,6 +69,7 @@ public class VoiceDialogueController : MonoBehaviour
     private bool isRecording;
     private bool isSubmitting;
     private RenderTexture runtimeSpeakingVideoTexture;
+    private bool playDialogueVideoOnPrepare = true;
 
     private void Awake()
     {
@@ -137,15 +159,19 @@ public class VoiceDialogueController : MonoBehaviour
 
     private void ResolveAudioSource()
     {
-        if (aiAudioSource != null)
-        {
-            return;
-        }
-
-        aiAudioSource = GetComponent<AudioSource>();
         if (aiAudioSource == null)
         {
-            aiAudioSource = gameObject.AddComponent<AudioSource>();
+            aiAudioSource = GetComponent<AudioSource>();
+            if (aiAudioSource == null)
+            {
+                aiAudioSource = gameObject.AddComponent<AudioSource>();
+            }
+        }
+
+        if (speakingVideoAudioSource == null)
+        {
+            speakingVideoAudioSource = gameObject.AddComponent<AudioSource>();
+            speakingVideoAudioSource.playOnAwake = false;
         }
     }
 
@@ -194,12 +220,22 @@ public class VoiceDialogueController : MonoBehaviour
         PlayDialogueVideo(dialogueVideoFileName);
     }
 
-    private void PlayDialogueVideo(string videoFileName)
+    private bool PlayDialogueVideo(string videoFileName)
+    {
+        return PlayDialogueVideo(videoFileName, true);
+    }
+
+    private bool PlayDialogueVideo(string videoFileName, bool loopVideo)
+    {
+        return PlayDialogueVideo(videoFileName, loopVideo, true);
+    }
+
+    private bool PlayDialogueVideo(string videoFileName, bool loopVideo, bool playOnPrepare)
     {
         if (string.IsNullOrEmpty(videoFileName))
         {
             Debug.LogWarning("[VoiceDialogue] dialogue video file name is empty.");
-            return;
+            return false;
         }
 
         Debug.Log("[VoiceDialogue] PlayDialogueVideo videoFileName=" + videoFileName);
@@ -217,7 +253,7 @@ public class VoiceDialogueController : MonoBehaviour
         if (!fileExists)
         {
             Debug.LogWarning("VoiceDialogueController: dialogue video missing. path=" + localPath);
-            return;
+            return false;
         }
 #endif
 
@@ -234,7 +270,7 @@ public class VoiceDialogueController : MonoBehaviour
         if (speakingVideoPlayer == null)
         {
             Debug.LogWarning("[VoiceDialogue] speakingVideoPlayer is not assigned.");
-            return;
+            return false;
         }
 
         EnsureSpeakingVideoOutput();
@@ -243,7 +279,8 @@ public class VoiceDialogueController : MonoBehaviour
         speakingVideoPlayer.Stop();
         speakingVideoPlayer.source = VideoSource.Url;
         speakingVideoPlayer.url = videoUrl;
-        speakingVideoPlayer.isLooping = true;
+        speakingVideoPlayer.isLooping = loopVideo;
+        playDialogueVideoOnPrepare = playOnPrepare;
         speakingVideoPlayer.playOnAwake = false;
         speakingVideoPlayer.waitForFirstFrame = true;
         speakingVideoPlayer.errorReceived -= OnDialogueVideoError;
@@ -253,6 +290,29 @@ public class VoiceDialogueController : MonoBehaviour
 
         Debug.Log("[VoiceDialogue] dialogue video url=" + videoUrl);
         speakingVideoPlayer.Prepare();
+        return true;
+    }
+
+    private void ConfigureSpeakingVideoAudio(bool enableVideoAudio)
+    {
+        if (speakingVideoPlayer == null)
+        {
+            return;
+        }
+
+        speakingVideoPlayer.audioOutputMode = VideoAudioOutputMode.AudioSource;
+        speakingVideoPlayer.controlledAudioTrackCount = 1;
+        speakingVideoPlayer.EnableAudioTrack(0, enableVideoAudio);
+
+        if (speakingVideoAudioSource == null)
+        {
+            speakingVideoAudioSource = gameObject.AddComponent<AudioSource>();
+            speakingVideoAudioSource.playOnAwake = false;
+        }
+
+        speakingVideoPlayer.SetTargetAudioSource(0, speakingVideoAudioSource);
+        speakingVideoAudioSource.mute = !enableVideoAudio;
+        speakingVideoAudioSource.volume = enableVideoAudio ? 1f : 0f;
     }
 
     private void EnsureSpeakingVideoOutput()
@@ -289,7 +349,7 @@ public class VoiceDialogueController : MonoBehaviour
         {
             if (runtimeSpeakingVideoTexture == null)
             {
-                runtimeSpeakingVideoTexture = new RenderTexture(1280, 720, 0);
+                runtimeSpeakingVideoTexture = new RenderTexture(1112, 834, 0);
                 runtimeSpeakingVideoTexture.name = "RuntimeDialogueVideoRT";
             }
 
@@ -319,7 +379,7 @@ public class VoiceDialogueController : MonoBehaviour
             containerRect.anchorMin = new Vector2(0.5f, 0.5f);
             containerRect.anchorMax = new Vector2(0.5f, 0.5f);
             containerRect.pivot = new Vector2(0.5f, 0.5f);
-            containerRect.sizeDelta = new Vector2(960f, 540f);
+            containerRect.sizeDelta = new Vector2(960f, 720f);
             containerRect.localScale = Vector3.one;
         }
 
@@ -330,22 +390,54 @@ public class VoiceDialogueController : MonoBehaviour
         rect.offsetMax = Vector2.zero;
         rect.localScale = Vector3.one;
 
-        AspectRatioFitter fitter = speakingVideoRawImage.GetComponent<AspectRatioFitter>();
-        if (fitter == null)
-        {
-            fitter = speakingVideoRawImage.gameObject.AddComponent<AspectRatioFitter>();
-        }
-
-        fitter.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
-        fitter.aspectRatio = 16f / 9f;
+        ApplyVideoAspectRatio(DefaultDialogueVideoAspectRatio);
 
         Debug.Log("[VoiceDialogue] video rect fitted. containerSize=" + (containerRect == null ? "null" : containerRect.rect.size.ToString()) + ", rawImageSize=" + rect.rect.size);
     }
 
     private void OnDialogueVideoPrepared(VideoPlayer player)
     {
-        Debug.Log("[VoiceDialogue] dialogue video prepared, play now.");
-        player.Play();
+        ApplyPreparedVideoAspectRatio(player);
+        if (playDialogueVideoOnPrepare)
+        {
+            Debug.Log("[VoiceDialogue] dialogue video prepared, play now.");
+            player.Play();
+        }
+        else
+        {
+            Debug.Log("[VoiceDialogue] dialogue video prepared, waiting for synchronized audio playback.");
+        }
+    }
+
+    private void ApplyPreparedVideoAspectRatio(VideoPlayer player)
+    {
+        if (speakingVideoRawImage == null)
+        {
+            return;
+        }
+
+        Texture videoTexture = player == null ? null : player.texture;
+        float aspectRatio = DefaultDialogueVideoAspectRatio;
+        if (videoTexture != null && videoTexture.height > 0)
+        {
+            aspectRatio = (float)videoTexture.width / videoTexture.height;
+        }
+
+        ApplyVideoAspectRatio(aspectRatio);
+        Debug.Log("[VoiceDialogue] prepared video aspectRatio=" + aspectRatio);
+    }
+
+    private void ApplyVideoAspectRatio(float aspectRatio)
+    {
+        GameObject fitterTarget = speakingVideoDisplay != null ? speakingVideoDisplay : speakingVideoRawImage.gameObject;
+        AspectRatioFitter fitter = fitterTarget.GetComponent<AspectRatioFitter>();
+        if (fitter == null)
+        {
+            fitter = fitterTarget.AddComponent<AspectRatioFitter>();
+        }
+
+        fitter.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
+        fitter.aspectRatio = aspectRatio;
     }
 
     private void OnDialogueVideoError(VideoPlayer player, string message)
@@ -607,8 +699,8 @@ public class VoiceDialogueController : MonoBehaviour
 
         if (HasValidAiVoiceResponse(response))
         {
-            SetStatus(GetResponseStatus(response));
-            yield return PlayAiVoiceWithSpeakingVideo(response);
+            SetStatus("姝ｅ湪鎾斁鍥炲簲...");
+            yield return PlayAiVoiceWithSuccessVideo(response);
         }
         else
         {
@@ -676,11 +768,84 @@ public class VoiceDialogueController : MonoBehaviour
         }
     }
 
+    private IEnumerator PlayAiVoiceWithSuccessVideo(VoiceDialogueResponse response)
+    {
+        string successVideoFileName = GetSuccessVideoFileNameForCurrentRole();
+        AudioClip aiClip = null;
+
+        AudioType audioType = ResolveAudioType(response.audioUrl);
+        using (UnityWebRequest request = UnityWebRequestMultimedia.GetAudioClip(response.audioUrl, audioType))
+        {
+            request.timeout = Mathf.Max(1, requestTimeoutSeconds);
+            yield return request.SendWebRequest();
+
+            if (request.result == UnityWebRequest.Result.Success)
+            {
+                aiClip = DownloadHandlerAudioClip.GetContent(request);
+            }
+            else
+            {
+                SetStatus("语音音频播放失败，但文本回复已收到");
+                Debug.LogWarning("VoiceDialogueController: audio download failed: " + request.error);
+            }
+        }
+
+        ConfigureSpeakingVideoAudio(false);
+        bool videoStarted = PlayDialogueVideo(successVideoFileName, false, false);
+        if (videoStarted && speakingVideoPlayer != null)
+        {
+            float prepareWaitSeconds = 0f;
+            while (!speakingVideoPlayer.isPrepared && prepareWaitSeconds < 3f)
+            {
+                prepareWaitSeconds += Time.unscaledDeltaTime;
+                yield return null;
+            }
+        }
+
+        bool audioStarted = false;
+        if (aiAudioSource != null && aiClip != null)
+        {
+            aiAudioSource.Stop();
+            aiAudioSource.clip = aiClip;
+        }
+        else
+        {
+            Debug.LogWarning("VoiceDialogueController: aiAudioSource or downloaded clip is not available.");
+        }
+
+        if (videoStarted && speakingVideoPlayer != null && speakingVideoPlayer.isPrepared)
+        {
+            speakingVideoPlayer.Play();
+        }
+        else if (videoStarted)
+        {
+            playDialogueVideoOnPrepare = true;
+        }
+
+        if (aiAudioSource != null && aiClip != null)
+        {
+            aiAudioSource.Play();
+            audioStarted = true;
+        }
+
+        yield return WaitForDialoguePlayback(videoStarted, audioStarted);
+
+        isSubmitting = false;
+        SetStatus(GetResponseStatus(response));
+
+        if (!string.IsNullOrEmpty(dialogueNextNodeId) && fmvController != null)
+        {
+            fmvController.PlayNodeFromOutside(dialogueNextNodeId);
+        }
+    }
+
     private IEnumerator PlayFallbackDialogueVideo()
     {
         SetStatus("未检测到有效语音，播放预设回应");
 
-        if (string.IsNullOrWhiteSpace(fallbackVideoFileName))
+        string selectedFallbackVideoFileName = GetFallbackVideoFileNameForCurrentRole();
+
+        if (string.IsNullOrWhiteSpace(selectedFallbackVideoFileName))
         {
             Debug.LogWarning("VoiceDialogueController: fallbackVideoFileName is empty.");
             isSubmitting = false;
@@ -688,9 +853,9 @@ public class VoiceDialogueController : MonoBehaviour
         }
 
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
-        string normalizedFallbackFileName = fallbackVideoFileName.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)
-            ? fallbackVideoFileName
-            : fallbackVideoFileName + ".mp4";
+        string normalizedFallbackFileName = selectedFallbackVideoFileName.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)
+            ? selectedFallbackVideoFileName
+            : selectedFallbackVideoFileName + ".mp4";
         string fallbackPath = Path.Combine(Application.streamingAssetsPath, "Videos", normalizedFallbackFileName);
         if (!File.Exists(fallbackPath))
         {
@@ -701,9 +866,145 @@ public class VoiceDialogueController : MonoBehaviour
         }
 #endif
 
-        PlayDialogueVideo(fallbackVideoFileName);
+        ConfigureSpeakingVideoAudio(true);
+        bool videoStarted = PlayDialogueVideo(selectedFallbackVideoFileName, false);
+        yield return WaitForDialoguePlayback(videoStarted, false);
         isSubmitting = false;
         yield break;
+    }
+
+    private string GetSuccessVideoFileNameForCurrentRole()
+    {
+        string currentRoleId = GetCurrentRoleId();
+        if (!string.IsNullOrWhiteSpace(currentRoleId) && roleSuccessVideos != null)
+        {
+            for (int i = 0; i < roleSuccessVideos.Length; i++)
+            {
+                RoleDialogueVideoData data = roleSuccessVideos[i];
+                if (data == null)
+                {
+                    continue;
+                }
+
+                if (string.Equals(data.roleId, currentRoleId, StringComparison.OrdinalIgnoreCase) &&
+                    !string.IsNullOrWhiteSpace(data.videoFileName))
+                {
+                    Debug.Log("VoiceDialogueController: success video for roleId=" + currentRoleId + " file=" + data.videoFileName);
+                    return data.videoFileName;
+                }
+            }
+        }
+
+        string fallbackSuccessVideo = !string.IsNullOrWhiteSpace(defaultSuccessVideoFileName)
+            ? defaultSuccessVideoFileName
+            : successSpeakingVideoFileName;
+        Debug.Log("VoiceDialogueController: success video default for roleId=" + currentRoleId + " file=" + fallbackSuccessVideo);
+        return fallbackSuccessVideo;
+    }
+
+    private IEnumerator WaitForDialoguePlayback(bool videoStarted, bool audioStarted)
+    {
+        float maxDuration = 0f;
+
+        if (audioStarted && aiAudioSource != null && aiAudioSource.clip != null)
+        {
+            maxDuration = Mathf.Max(maxDuration, aiAudioSource.clip.length);
+        }
+
+        if (videoStarted && speakingVideoPlayer != null)
+        {
+            float prepareWaitSeconds = 0f;
+            while (!speakingVideoPlayer.isPrepared && prepareWaitSeconds < 3f)
+            {
+                prepareWaitSeconds += Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            double videoLength = speakingVideoPlayer.length;
+            if (!double.IsNaN(videoLength) && !double.IsInfinity(videoLength) && videoLength > 0.1d)
+            {
+                maxDuration = Mathf.Max(maxDuration, (float)videoLength);
+            }
+        }
+
+        if (maxDuration <= 0f)
+        {
+            if (videoStarted && speakingVideoPlayer != null)
+            {
+                float videoWaitSeconds = 0f;
+                while (speakingVideoPlayer.isPlaying && videoWaitSeconds < 30f)
+                {
+                    videoWaitSeconds += Time.unscaledDeltaTime;
+                    yield return null;
+                }
+            }
+
+            yield break;
+        }
+
+        float elapsed = 0f;
+        while (elapsed < maxDuration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            yield return null;
+        }
+    }
+
+    private string GetFallbackVideoFileNameForCurrentRole()
+    {
+        string currentRoleId = GetCurrentRoleId();
+        if (!string.IsNullOrWhiteSpace(currentRoleId) && roleFallbackVideos != null)
+        {
+            for (int i = 0; i < roleFallbackVideos.Length; i++)
+            {
+                RoleFallbackVideoData data = roleFallbackVideos[i];
+                if (data == null)
+                {
+                    continue;
+                }
+
+                if (string.Equals(data.roleId, currentRoleId, StringComparison.OrdinalIgnoreCase) &&
+                    !string.IsNullOrWhiteSpace(data.fallbackVideoFileName))
+                {
+                    Debug.Log("VoiceDialogueController: fallback video for roleId=" + currentRoleId + " file=" + data.fallbackVideoFileName);
+                    return data.fallbackVideoFileName;
+                }
+            }
+        }
+
+        string fallback = !string.IsNullOrWhiteSpace(defaultFallbackVideoFileName)
+            ? defaultFallbackVideoFileName
+            : fallbackVideoFileName;
+        Debug.Log("VoiceDialogueController: fallback video default for roleId=" + currentRoleId + " file=" + fallback);
+        return fallback;
+    }
+
+    private string GetCurrentRoleId()
+    {
+        if (!string.IsNullOrWhiteSpace(roleId))
+        {
+            return roleId;
+        }
+
+        string[] keys =
+        {
+            "roleId",
+            "selectedRoleId",
+            "currentRoleId",
+            "SelectedRoleId",
+            "CurrentRoleId"
+        };
+
+        for (int i = 0; i < keys.Length; i++)
+        {
+            string value = PlayerPrefs.GetString(keys[i], "");
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return "";
     }
 
     private IEnumerator PlayFallbackDialogueVideoAndRestoreRecordButton()
@@ -791,6 +1092,7 @@ public class VoiceDialogueController : MonoBehaviour
         }
 
         EnsureSpeakingVideoOutput();
+        ConfigureSpeakingVideoAudio(false);
 
         string videoUrl = BuildVideoUrl(fileName);
         speakingVideoPlayer.Stop();
