@@ -11,6 +11,12 @@ const DEFAULT_APP_ID = "4047318685";
 const DEFAULT_APP_KEY = "PlgvMymc7f3tQnJ6";
 const DEFAULT_MODEL = "1.2.1.1";
 const DEFAULT_SPEAKER = "zh_male_yunzhou_jupiter_bigtts";
+const ROLE_BASED_SPEAKER = {
+  Mozart: "zh_male_yunzhou_jupiter_bigtts",
+  "莫扎特": "zh_male_yunzhou_jupiter_bigtts",
+  Einstein: "zh_female_vv_jupiter_bigtts",
+  "爱因斯坦": "zh_female_vv_jupiter_bigtts"
+};
 const DEFAULT_SYSTEM_ROLE = "你是互动影像游戏中的角色。你冷静、克制、善于观察线索。请用简短自然的中文回应玩家。";
 const DEFAULT_SPEAKING_STYLE = "语气沉稳，句子不要太长，像影视角色对白。";
 const AUDIO_PACKET_SIZE_BYTES = 640;
@@ -127,7 +133,8 @@ async function createDoubaoVoiceDialogue({
         speakingVideoNodeId: "role_speaking",
         emotion: "calm",
         source: toStringValue(result.source) || "doubao",
-        error: toStringValue(result.error)
+        error: toStringValue(result.error),
+        ttsAudioBytes: toSafeNumber(result.ttsAudioBytes)
       };
     }
 
@@ -755,6 +762,21 @@ function readDoubaoRealtimeConfig(runtimeConfig = {}) {
   };
 }
 
+function resolveSpeakerForRole(roleId, roleName, fallbackSpeaker = DEFAULT_SPEAKER) {
+  const normalizedRoleId = toStringValue(roleId);
+  const normalizedRoleName = toStringValue(roleName);
+
+  if (ROLE_BASED_SPEAKER[normalizedRoleId]) {
+    return ROLE_BASED_SPEAKER[normalizedRoleId];
+  }
+
+  if (ROLE_BASED_SPEAKER[normalizedRoleName]) {
+    return ROLE_BASED_SPEAKER[normalizedRoleName];
+  }
+
+  return fallbackSpeaker || DEFAULT_SPEAKER;
+}
+
 function isDoubaoCooldownActive() {
   return Date.now() < doubaoCooldownUntil;
 }
@@ -794,6 +816,8 @@ function buildWebSocketHeaders(config, connectId) {
 }
 
 function buildStartSessionPayload({ config, sessionId, roleId, roleName, sceneId }) {
+  const speaker = resolveSpeakerForRole(roleId, roleName, config.speaker);
+
   return {
     session: {
       id: sessionId
@@ -807,7 +831,7 @@ function buildStartSessionPayload({ config, sessionId, roleId, roleName, sceneId
       extra: {}
     },
     tts: {
-      speaker: config.speaker,
+      speaker,
       audio_config: {
         channel: 1,
         format: "pcm_s16le",
@@ -1211,6 +1235,7 @@ async function buildDialogueSuccess({ transcript, replyText, ttsChunks, outputDi
       replyText: effectiveReplyText,
       audioUrl,
       source: audioUrl ? "doubao" : "doubao_partial",
+      ttsAudioBytes: ttsAudioBytes || 0,
       error: "DOUBAO_REPLY_FALLBACK"
     };
   }
@@ -1221,6 +1246,7 @@ async function buildDialogueSuccess({ transcript, replyText, ttsChunks, outputDi
       transcript: normalizedTranscript,
       replyText: effectiveReplyText,
       audioUrl: "",
+      ttsAudioBytes: ttsAudioBytes || 0,
       source: "doubao_partial",
       error: postTtsError ? `TTS_NOT_AVAILABLE:${postTtsError}` : "TTS_NOT_AVAILABLE"
     };
@@ -1231,6 +1257,7 @@ async function buildDialogueSuccess({ transcript, replyText, ttsChunks, outputDi
     transcript: normalizedTranscript,
     replyText: effectiveReplyText,
     audioUrl,
+    ttsAudioBytes: ttsAudioBytes || 0,
     source: "doubao",
     error: ""
   };
@@ -1661,6 +1688,10 @@ function toBuffer(value) {
 
 function toStringValue(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function toSafeNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function getEnv(name) {
