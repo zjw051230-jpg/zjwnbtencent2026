@@ -23,6 +23,15 @@
       "id": "mozart_main1",
       "video": "mozart_main1.mp4",
       "choiceTime": -1,
+      "defaultNext": "mozart_main2",
+      "showInMenu": false,
+      "menuTitle": "\u83ab\u624e\u7279\u4e3b\u7ebf\u524d\u8282\u70b9",
+      "choices": []
+    },
+    {
+      "id": "mozart_main2",
+      "video": "mozart_main2.mp4",
+      "choiceTime": -1,
       "defaultNext": "dialogue_Mozart",
       "showInMenu": false,
       "menuTitle": "\u83ab\u624e\u7279\u4e3b\u7ebf\u524d\u8282\u70b9",
@@ -33,20 +42,12 @@
       "video": "dialogue_Mozart.mp4",
       "eventType": "voiceDialogue",
       "choiceTime": -1,
-      "defaultNext": "mozart_main2",
+      "defaultNext": "",
       "showInMenu": true,
       "menuTitle": "\u8df3\u5230\u83ab\u624e\u7279\u5bf9\u8bdd\u573a\u666f",
       "choices": []
     },
-    {
-      "id": "mozart_main2",
-      "video": "mozart_main2.mp4",
-      "choiceTime": -1,
-      "defaultNext": "",
-      "showInMenu": false,
-      "menuTitle": "\u83ab\u624e\u7279\u4e3b\u7ebf\u524d\u8282\u70b9",
-      "choices": []
-    },
+
     {
       "id": "intro_Einstein",
       "video": "intro_Einstein.mp4",
