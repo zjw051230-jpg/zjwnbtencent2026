@@ -18,6 +18,7 @@ const SESSION_TIMEOUT_MS = 60000;
 const CONNECTION_STARTED_TIMEOUT_MS = 8000;
 const SESSION_STARTED_TIMEOUT_MS = 10000;
 const ASR_CHAT_TIMEOUT_MS = 60000;
+const TEXT_READY_RETURN_DELAY_MS = 1500;
 const DOUBAO_QPM_COOLDOWN_MS = 60000;
 
 let doubaoCooldownUntil = 0;
@@ -185,6 +186,7 @@ async function runDoubaoRealtimeSession({
     let finishSessionSent = false;
     let transportError = "";
     let waitStage = "connection_started";
+    let textReadyReturnTimerId = null;
     const ttsChunks = [];
     const eventWaiters = new Map();
 
@@ -373,7 +375,8 @@ async function runDoubaoRealtimeSession({
             transcript = finalTranscript;
           }
           if (transcript) {
-            console.log(`[doubao] transcript=${transcript}`);
+            console.log(`[doubao] transcript final length=${transcript.length}`);
+            maybeScheduleTextReadyReturn();
           }
           return;
         }
@@ -388,7 +391,8 @@ async function runDoubaoRealtimeSession({
           const text = extractReplyText(frame.payload);
           if (text) {
             replyText = appendSegment(replyText, text);
-            console.log(`[doubao] replyText=${replyText}`);
+            console.log(`[doubao] replyText final length=${replyText.length}`);
+            maybeScheduleTextReadyReturn();
           }
           return;
         }
@@ -404,6 +408,7 @@ async function runDoubaoRealtimeSession({
         if (frame.eventName === "ChatEnded") {
           chatEnded = true;
           maybeSendFinishSession();
+          console.log("[doubao] ChatEnded received, returning doubao result to Unity");
           finish(buildDialogueSuccess({ transcript: finalTranscript || transcript, replyText: replyText || fallbackReplyText, ttsChunks }));
           return;
         }
@@ -418,6 +423,7 @@ async function runDoubaoRealtimeSession({
         if (frame.eventName === "TTSEnded") {
           ttsEnded = true;
           maybeSendFinishSession();
+          console.log("[doubao] TTSEnded received, returning doubao result to Unity");
           finish(buildDialogueSuccess({ transcript: finalTranscript || transcript, replyText: replyText || fallbackReplyText, ttsChunks }));
           return;
         }
@@ -487,6 +493,7 @@ async function runDoubaoRealtimeSession({
 
       settled = true;
       clearTimeout(timeoutId);
+      clearTextReadyReturnTimer();
       rejectPendingEventWaiters(transportError || getStageTimeoutError(waitStage) || "DOUBAO_REALTIME_CLOSED");
 
       try {
@@ -498,6 +505,46 @@ async function runDoubaoRealtimeSession({
       }
 
       resolve(result);
+    }
+
+    function maybeScheduleTextReadyReturn() {
+      if (settled || textReadyReturnTimerId) {
+        return;
+      }
+
+      const resolvedTranscript = finalTranscript || transcript;
+      const resolvedReplyText = replyText || fallbackReplyText;
+      if (!resolvedTranscript || !resolvedReplyText) {
+        return;
+      }
+
+      console.log(
+        `[doubao] text ready, scheduling return to Unity in ${TEXT_READY_RETURN_DELAY_MS}ms transcriptLength=${resolvedTranscript.length} replyTextLength=${resolvedReplyText.length}`
+      );
+
+      textReadyReturnTimerId = setTimeout(() => {
+        textReadyReturnTimerId = null;
+        const latestTranscript = finalTranscript || transcript;
+        const latestReplyText = replyText || fallbackReplyText;
+        if (latestTranscript && latestReplyText) {
+          console.log(
+            `[doubao] returning doubao result to Unity transcriptLength=${latestTranscript.length} replyTextLength=${latestReplyText.length}`
+          );
+          finish(buildDialogueSuccess({ transcript: latestTranscript, replyText: latestReplyText, ttsChunks }));
+          return;
+        }
+
+        console.warn("[doubao] text ready timer fired but transcript or replyText became empty");
+      }, TEXT_READY_RETURN_DELAY_MS);
+    }
+
+    function clearTextReadyReturnTimer() {
+      if (!textReadyReturnTimerId) {
+        return;
+      }
+
+      clearTimeout(textReadyReturnTimerId);
+      textReadyReturnTimerId = null;
     }
 
     function maybeSendFinishSession() {

@@ -429,6 +429,14 @@ public class VoiceDialogueController : MonoBehaviour
         Debug.LogWarning("VoiceDialogueController: Unity WebGL Microphone is not supported by this controller.");
         return;
 #else
+        Debug.Log("VoiceDialogueController: platform = " + Application.platform);
+        Debug.Log("VoiceDialogueController: Microphone.devices.Length = " + Microphone.devices.Length);
+        for (int i = 0; i < Microphone.devices.Length; i++)
+        {
+            Debug.Log("VoiceDialogueController: Microphone.devices[" + i + "] = " + Microphone.devices[i]);
+        }
+        Debug.Log("VoiceDialogueController: sampleRate = " + sampleRate + ", maxRecordSeconds = " + maxRecordSeconds);
+
         if (Microphone.devices.Length == 0)
         {
             SetStatus("No microphone found");
@@ -438,7 +446,14 @@ public class VoiceDialogueController : MonoBehaviour
 
         Debug.Log("VoiceDialogueController: microphones = " + string.Join(", ", Microphone.devices));
         microphoneDevice = Microphone.devices[0];
+        Debug.Log("VoiceDialogueController: selected microphoneDevice = " + microphoneDevice);
         recordingClip = Microphone.Start(microphoneDevice, false, maxRecordSeconds, sampleRate);
+        Debug.Log("VoiceDialogueController: Microphone.Start returned clip = " + (recordingClip == null ? "null" : recordingClip.name));
+        Debug.Log("VoiceDialogueController: Microphone.IsRecording = " + Microphone.IsRecording(microphoneDevice));
+        if (recordingClip != null)
+        {
+            Debug.Log("VoiceDialogueController: recordingClip samples=" + recordingClip.samples + ", channels=" + recordingClip.channels + ", frequency=" + recordingClip.frequency);
+        }
         isRecording = true;
         SetStatus("正在录音，再次点击结束");
         Debug.Log("VoiceDialogueController: recording started with " + microphoneDevice);
@@ -457,6 +472,12 @@ public class VoiceDialogueController : MonoBehaviour
 
         int samplePosition = Microphone.GetPosition(microphoneDevice);
         Debug.Log("VoiceDialogueController: microphone sample position = " + samplePosition);
+        Debug.Log("VoiceDialogueController: Microphone.IsRecording before End = " + Microphone.IsRecording(microphoneDevice));
+        Debug.Log("VoiceDialogueController: recordedClip is null = " + (recordingClip == null));
+        if (recordingClip != null)
+        {
+            Debug.Log("VoiceDialogueController: recordedClip samples=" + recordingClip.samples + ", channels=" + recordingClip.channels + ", frequency=" + recordingClip.frequency);
+        }
         Microphone.End(microphoneDevice);
         isRecording = false;
         if (samplePosition <= 0)
