@@ -6,6 +6,11 @@ const crypto = require("crypto");
 const multer = require("multer");
 const OpenAI = require("openai");
 const { createDoubaoVoiceDialogue } = require("./services/doubaoRealtimeVoiceService.js");
+const {
+  recordApiInteraction,
+  saveApiInteractionMemory,
+  getApiInteractionMemorySummary
+} = require("./services/apiInteractionMemoryService.js");
 require("dotenv").config();
 
 const app = express();
@@ -26,9 +31,11 @@ const doubaoRuntimeState = {
 };
 const uploadDir = path.join(__dirname, "uploads");
 const generatedAudioDir = path.join(__dirname, "public", "generated-audio");
+const savedMemoryDir = path.join(__dirname, "saved-memory");
 
 fs.mkdirSync(uploadDir, { recursive: true });
 fs.mkdirSync(generatedAudioDir, { recursive: true });
+fs.mkdirSync(savedMemoryDir, { recursive: true });
 
 const upload = multer({
   dest: uploadDir,
@@ -99,8 +106,51 @@ app.get("/health", (req, res) => {
     doubaoRealtimeEnabled: isDoubaoRealtimeEnabled(),
     doubaoConfigured: isDoubaoConfigured(),
     doubaoRuntimeConfigured: isDoubaoRuntimeConfigured(),
-    doubaoAutoEnabled: isDoubaoAutoEnabled()
+    doubaoAutoEnabled: isDoubaoAutoEnabled(),
+    roleSpeakerConfigured: true,
+    speakerPolicy: "role_based"
   });
+});
+
+app.get("/api/memory/summary", (req, res) => {
+  res.json(getApiInteractionMemorySummary());
+});
+
+app.post("/api/memory/save", async (req, res) => {
+  try {
+    const result = await saveApiInteractionMemory({
+      outputDir: savedMemoryDir,
+      metadata: {
+        endpoint: "/api/memory/save",
+        client: getClientLabel(req),
+        source: "manual",
+        recordCount: getApiInteractionMemorySummary().recordCount
+      }
+    });
+
+    recordApiInteraction({
+      endpoint: "/api/memory/save",
+      status: result.ok ? "saved" : "failed",
+      fileName: result.fileName,
+      recordCount: result.recordCount,
+      error: result.error || "",
+      client: getClientLabel(req)
+    });
+
+    res.json(result);
+  } catch (error) {
+    const errorMessage = getErrorMessage(error);
+    recordApiInteraction({
+      endpoint: "/api/memory/save",
+      status: "failed",
+      error: errorMessage,
+      client: getClientLabel(req)
+    });
+    res.json({
+      ok: false,
+      error: errorMessage
+    });
+  }
 });
 
 app.post("/api/runtime-config/doubao", (req, res) => {
@@ -108,6 +158,13 @@ app.post("/api/runtime-config/doubao", (req, res) => {
 
   if (!accessKey) {
     doubaoRuntimeState.accessKey = "";
+    recordApiInteraction({
+      endpoint: "/api/runtime-config/doubao",
+      status: "failed",
+      error: "accessKey is required",
+      accessKeyConfigured: false,
+      client: getClientLabel(req)
+    });
     res.json({
       ok: false,
       error: "accessKey is required"
@@ -116,6 +173,12 @@ app.post("/api/runtime-config/doubao", (req, res) => {
   }
 
   doubaoRuntimeState.accessKey = accessKey;
+  recordApiInteraction({
+    endpoint: "/api/runtime-config/doubao",
+    status: "configured",
+    accessKeyConfigured: true,
+    client: getClientLabel(req)
+  });
   res.json({
     ok: true,
     doubaoRuntimeConfigured: true
@@ -133,10 +196,31 @@ app.post("/api/assign-role", async (req, res) => {
     const aiRole = await assignRoleWithAI(payload);
     const role = normalizeRole(aiRole);
 
+    recordApiInteraction({
+      endpoint: "/api/assign-role",
+      status: "ok",
+      roleId: role.roleId,
+      roleName: role.roleName,
+      startNodeId: role.startNodeId,
+      answersCount: payload.answers.length,
+      client: getClientLabel(req)
+    });
+
     console.log(`[assign-role] return roleId=${role.roleId}, startNodeId=${role.startNodeId}`);
     res.json(role);
   } catch (error) {
-    console.error("[assign-role] failed, return default role:", getErrorMessage(error));
+    const errorMessage = getErrorMessage(error);
+    console.error("[assign-role] failed, return default role:", errorMessage);
+    recordApiInteraction({
+      endpoint: "/api/assign-role",
+      status: "fallback",
+      roleId: DEFAULT_ROLE.roleId,
+      roleName: DEFAULT_ROLE.roleName,
+      startNodeId: DEFAULT_ROLE.startNodeId,
+      answersCount: payload.answers.length,
+      error: errorMessage,
+      client: getClientLabel(req)
+    });
     res.json(DEFAULT_ROLE);
   }
 });
@@ -162,7 +246,24 @@ app.post("/api/voice-dialogue", upload.single("audio"), async (req, res) => {
 
     if (demoVoiceMock) {
       console.log("[voice-dialogue] DEMO_VOICE_MOCK enabled, returning mock transcript and reply.");
-      res.json(createDemoVoiceMockResponse());
+      const mockResponse = createDemoVoiceMockResponse();
+      recordApiInteraction({
+        endpoint: "/api/voice-dialogue",
+        status: "mock",
+        roleId,
+        roleName,
+        sceneId,
+        source: mockResponse.source,
+        transcript: mockResponse.transcript,
+        replyText: mockResponse.replyText,
+        audioUrl: mockResponse.audioUrl,
+        speakingVideoNodeId: mockResponse.speakingVideoNodeId,
+        emotion: mockResponse.emotion,
+        error: mockResponse.error,
+        audioFileSize: uploadedFile.size,
+        client: getClientLabel(req)
+      });
+      res.json(mockResponse);
       return;
     }
 
@@ -205,10 +306,39 @@ app.post("/api/voice-dialogue", upload.single("audio"), async (req, res) => {
       });
     }
 
-    res.json(ensureVoiceDialogueResponse(result));
+    const response = ensureVoiceDialogueResponse(result);
+    recordApiInteraction({
+      endpoint: "/api/voice-dialogue",
+      status: response.ok ? "ok" : "failed",
+      roleId,
+      roleName,
+      sceneId,
+      source: response.source || (doubaoRealtimeEnabled ? "doubao" : "openai"),
+      transcript: response.transcript,
+      replyText: response.replyText,
+      audioUrl: response.audioUrl,
+      speakingVideoNodeId: response.speakingVideoNodeId,
+      emotion: response.emotion,
+      error: response.error,
+      audioFileSize: uploadedFile.size,
+      ttsAudioBytes: toSafeNumber(result && result.ttsAudioBytes),
+      client: getClientLabel(req)
+    });
+    res.json(response);
   } catch (error) {
-    console.error("[voice-dialogue] failed:", getErrorMessage(error));
-    res.json(createDefaultDialogueResponse(getErrorMessage(error)));
+    const errorMessage = getErrorMessage(error);
+    console.error("[voice-dialogue] failed:", errorMessage);
+    recordApiInteraction({
+      endpoint: "/api/voice-dialogue",
+      status: "failed",
+      roleId: toStringValue(req.body && req.body.roleId) || DEFAULT_ROLE.roleId,
+      roleName: toStringValue(req.body && req.body.roleName) || DEFAULT_ROLE.roleName,
+      sceneId: toStringValue(req.body && req.body.sceneId) || "dialogue_scene",
+      error: errorMessage,
+      audioFileSize: uploadedFile && uploadedFile.size ? uploadedFile.size : 0,
+      client: getClientLabel(req)
+    });
+    res.json(createDefaultDialogueResponse(errorMessage));
   } finally {
     if (uploadedFile) {
       fs.promises.unlink(uploadedFile.path).catch(() => {});
@@ -611,6 +741,14 @@ function isDoubaoRealtimeEnabled() {
 
 function normalizeAccessKey(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function getClientLabel(req) {
+  return toStringValue(req && req.ip) || "unknown";
+}
+
+function toSafeNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function toStringValue(value) {
