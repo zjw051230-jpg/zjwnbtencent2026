@@ -42,6 +42,9 @@ public class FMVDemoController : MonoBehaviour
     private bool wasVideoPausedForMenu;
     private bool hasHandledVideoEnd;
     private bool isTransitioning;
+    private int playGeneration;
+    private string currentNodeId = "";
+    private string currentPlaySource = "None";
     private TMP_FontAsset cachedChineseFont;
 
     public bool IsMenuPaused => isMenuPaused;
@@ -64,6 +67,9 @@ public class FMVDemoController : MonoBehaviour
         if (videoPlayer != null)
         {
             videoPlayer.playOnAwake = false;
+            videoPlayer.loopPointReached -= OnVideoFinished;
+            videoPlayer.errorReceived -= OnVideoError;
+            videoPlayer.prepareCompleted -= OnVideoPrepared;
             videoPlayer.loopPointReached += OnVideoFinished;
             videoPlayer.errorReceived += OnVideoError;
             videoPlayer.prepareCompleted += OnVideoPrepared;
@@ -104,6 +110,7 @@ public class FMVDemoController : MonoBehaviour
     private void Start()
     {
         LoadStory();
+        Debug.Log($"[FMVTRACE] FMVDemoController instances={FindObjectsOfType<FMVDemoController>().Length}");
 
         if (autoPlayOnStart)
         {
@@ -163,11 +170,13 @@ public class FMVDemoController : MonoBehaviour
             return;
         }
 
-        PlayNode(storyData.startNodeId);
+        PlayNode(storyData.startNodeId, "Start");
     }
 
     public void PlayNodeFromOutside(string nodeId)
     {
+        Debug.Log($"[FMVTRACE] PlayNodeFromOutside nodeId={nodeId} currentNode={currentNodeId} generation={playGeneration} isTransitioning={isTransitioning}");
+
         if (!string.IsNullOrEmpty(nodeId)
             && currentNode != null
             && string.Equals(currentNode.id, nodeId, StringComparison.Ordinal)
@@ -184,12 +193,12 @@ public class FMVDemoController : MonoBehaviour
             voiceDialogueController.HideDialoguePanelForExternalJump();
         }
 
-        PlayNode(nodeId);
+        PlayNode(nodeId, "External");
     }
 
     public void PlayNodePreviewFromOutside(string nodeId)
     {
-        PlayNode(nodeId, true);
+        PlayNode(nodeId, true, "Preview");
     }
 
     public List<StoryNode> GetMenuNodes()
@@ -256,12 +265,23 @@ public class FMVDemoController : MonoBehaviour
 
     public void PlayNode(string nodeId)
     {
-        PlayNode(nodeId, false);
+        PlayNode(nodeId, "Unknown");
     }
 
     private void PlayNode(string nodeId, bool previewOnly)
     {
+        PlayNode(nodeId, previewOnly, "Unknown");
+    }
+
+    private void PlayNode(string nodeId, string source)
+    {
+        PlayNode(nodeId, false, source);
+    }
+
+    private void PlayNode(string nodeId, bool previewOnly, string source)
+    {
         isMenuPaused = false;
+        Debug.Log($"[FMVTRACE] PlayNode request nodeId={nodeId} currentNode={currentNodeId} source={source} generation={playGeneration} isTransitioning={isTransitioning}");
 
         if (!EnsureStoryLoaded())
         {
@@ -286,10 +306,21 @@ public class FMVDemoController : MonoBehaviour
             return;
         }
 
+        if (!previewOnly
+            && currentNode != null
+            && string.Equals(currentNode.id, nodeId, StringComparison.Ordinal)
+            && videoPlayer != null
+            && (videoPlayer.isPlaying || isTransitioning || (currentVideoStarted && !hasHandledVideoEnd)))
+        {
+            Debug.Log($"[FMVTRACE] PlayNode ignored duplicate current nodeId={nodeId} source={source} generation={playGeneration}");
+            return;
+        }
+
         if (string.IsNullOrEmpty(node.video))
         {
             if (node.eventType == "voiceDialogue")
             {
+                currentPlaySource = source;
                 OpenVoiceDialogueNode(node);
                 return;
             }
@@ -300,6 +331,7 @@ public class FMVDemoController : MonoBehaviour
 
         if (node.eventType == "voiceDialogue")
         {
+            currentPlaySource = source;
             OpenVoiceDialogueNode(node);
             return;
         }
@@ -307,7 +339,11 @@ public class FMVDemoController : MonoBehaviour
         ClearChoices();
 
         isTransitioning = true;
+        playGeneration++;
+        int generation = playGeneration;
         currentNode = node;
+        currentNodeId = node.id;
+        currentPlaySource = source;
         choicesVisible = false;
         currentVideoStarted = false;
         hasHandledVideoEnd = false;
@@ -342,6 +378,7 @@ public class FMVDemoController : MonoBehaviour
             ShowClickHint(node.clickHintText);
         }
 
+        Debug.Log($"[FMVTRACE] PlayNode start nodeId={node.id} video={node.video} source={source} generation={generation}");
         Debug.Log("FMVDemoController: preparing node " + node.id + " with video " + videoPlayer.url + (previewOnly ? " preview" : ""));
     }
 
@@ -503,7 +540,12 @@ public class FMVDemoController : MonoBehaviour
             SetButtonLabel(button, choice.text);
 
             string nextNodeId = choice.next;
-            button.onClick.AddListener(() => PlayNode(nextNodeId));
+            string fromNodeId = currentNodeId;
+            button.onClick.AddListener(() =>
+            {
+                Debug.Log($"[FMVTRACE] Choice clicked from={fromNodeId} to={nextNodeId} generation={playGeneration}");
+                PlayNode(nextNodeId, "Choice");
+            });
         }
     }
 
@@ -538,6 +580,10 @@ public class FMVDemoController : MonoBehaviour
 
     private void OnVideoFinished(VideoPlayer player)
     {
+        int generation = playGeneration;
+        string finishingNodeId = currentNodeId;
+        Debug.Log($"[FMVTRACE] VideoFinished nodeId={finishingNodeId} generation={generation} handled={hasHandledVideoEnd} isTransitioning={isTransitioning} source={currentPlaySource}");
+
         if (isMenuPaused)
         {
             Debug.Log("FMVDemoController: video finished while menu paused, skip auto next.");
@@ -572,7 +618,8 @@ public class FMVDemoController : MonoBehaviour
 
         if (!string.IsNullOrEmpty(currentNode.defaultNext))
         {
-            PlayNode(currentNode.defaultNext);
+            Debug.Log($"[FMVTRACE] Continue defaultNext from={currentNode.id} to={currentNode.defaultNext} generation={generation}");
+            PlayNode(currentNode.defaultNext, "DefaultNext");
             return;
         }
 
@@ -586,6 +633,7 @@ public class FMVDemoController : MonoBehaviour
 
     private void OnVideoPrepared(VideoPlayer player)
     {
+        Debug.Log($"[FMVTRACE] VideoPrepared nodeId={currentNodeId} generation={playGeneration} url={player.url}");
         Debug.Log("FMVDemoController: video prepared, play " + player.url);
         player.Play();
         currentVideoStarted = true;
@@ -674,9 +722,13 @@ public class FMVDemoController : MonoBehaviour
         ClearChoices();
         HideClickHint();
 
+        playGeneration++;
         currentNode = node;
+        currentNodeId = node.id;
         choicesVisible = true;
         currentVideoStarted = false;
+        hasHandledVideoEnd = true;
+        isTransitioning = false;
 
         if (videoPlayer != null)
         {
@@ -697,6 +749,7 @@ public class FMVDemoController : MonoBehaviour
         string roleId = PlayerPrefs.GetString("PLAYER_ROLE_ID", "investigator");
         string roleName = PlayerPrefs.GetString("PLAYER_ROLE_NAME", "调查者");
         Debug.Log($"[FMV] OpenVoiceDialogueNode id={node.id}, video={node.video}, defaultNext={node.defaultNext}");
+        Debug.Log($"[FMVTRACE] OpenVoiceDialogue nodeId={node.id} video={node.video} defaultNext={node.defaultNext} source={currentPlaySource} generation={playGeneration}");
         voiceDialogueController.OpenDialogue(roleId, roleName, node.id, node.video, node.defaultNext, this);
 
         Debug.Log("FMVDemoController: opened voice dialogue node " + node.id);
@@ -728,7 +781,8 @@ public class FMVDemoController : MonoBehaviour
             return;
         }
 
-        PlayNode(nextNodeId);
+        Debug.Log($"[FMVTRACE] ClickToNext from={currentNode.id} to={nextNodeId} generation={playGeneration}");
+        PlayNode(nextNodeId, "ClickToNext");
     }
 
     private void ShowClickHint(string hint)
